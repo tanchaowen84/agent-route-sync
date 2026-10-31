@@ -1,0 +1,60 @@
+{
+  "dns": {
+    "servers": [
+      {"type": "local", "tag": "dns-local"},
+      {"type": "https", "tag": "dns-direct", "server": "223.5.5.5", "path": "/dns-query"},
+      {"type": "https", "tag": "dns-proxy", "server": "1.1.1.1", "path": "/dns-query", "detour": "PROXY"},
+      {"type": "fakeip", "tag": "dns-fake", "inet4_range": "198.18.0.0/16", "inet6_range": "fc00::/18"}
+    ],
+    "rules": [
+      {"domain": ["localhost"], "domain_suffix": ["lan", "local", "home.arpa"], "server": "dns-local"},
+      {"rule_set": ["sr-private"], "server": "dns-local"},
+      {"rule_set": ["sr-direct", "sr-proxy"], "query_type": ["A", "AAAA"], "action": "route", "server": "dns-fake"},
+      {"rule_set": ["sr-proxy"], "server": "dns-proxy"},
+      {"rule_set": ["sr-direct"], "server": "dns-direct"},
+      {"query_type": ["A", "AAAA"], "action": "evaluate", "server": "dns-proxy", "timeout": "2s"},
+      {"query_type": ["A", "AAAA"], "match_response": true, "rule_set": ["sr-non-cn-ip"], "action": "route", "server": "dns-fake"},
+      {"query_type": ["A", "AAAA"], "match_response": true, "rule_set": ["sr-cn-ip"], "action": "respond"},
+      {"query_type": ["A", "AAAA"], "action": "route", "server": "dns-fake"}
+    ],
+    "final": "dns-proxy",
+    "strategy": "prefer_ipv4",
+    "reverse_mapping": false
+  },
+  "outbounds": [
+    {"type": "direct", "tag": "DIRECT", "domain_resolver": "dns-direct"}
+  ],
+  "route": {
+    "auto_detect_interface": true,
+    "default_domain_resolver": "dns-proxy",
+    "rule_set": [
+      {"type": "remote", "tag": "sr-private", "format": "source", "url": "https://raw.githubusercontent.com/ryuu-restart/agent-route/release/sing-box/private.json", "http_client": {"detour": "PROXY"}, "update_interval": "24h"},
+      {"type": "remote", "tag": "sr-reject", "format": "source", "url": "https://raw.githubusercontent.com/ryuu-restart/agent-route/release/sing-box/reject.json", "http_client": {"detour": "PROXY"}, "update_interval": "24h"},
+      {"type": "remote", "tag": "sr-proxy", "format": "source", "url": "https://raw.githubusercontent.com/ryuu-restart/agent-route/release/sing-box/proxy.json", "http_client": {"detour": "PROXY"}, "update_interval": "24h"},
+      {"type": "remote", "tag": "sr-direct", "format": "source", "url": "https://raw.githubusercontent.com/ryuu-restart/agent-route/release/sing-box/direct.json", "http_client": {"detour": "PROXY"}, "update_interval": "24h"},
+      {"type": "remote", "tag": "sr-cn-ip", "format": "source", "url": "https://raw.githubusercontent.com/ryuu-restart/agent-route/release/sing-box/cn-ip.json", "http_client": {"detour": "PROXY"}, "update_interval": "24h"},
+      {"type": "remote", "tag": "sr-non-cn-ip", "format": "source", "url": "https://raw.githubusercontent.com/ryuu-restart/agent-route/release/sing-box/non-cn-ip.json", "http_client": {"detour": "PROXY"}, "update_interval": "24h"}
+    ],
+    "rules": [
+      {"port": 53, "action": "hijack-dns"},
+      {"domain": ["localhost"], "domain_suffix": ["lan", "local", "home.arpa"], "action": "route", "outbound": "DIRECT"},
+      {"ip_cidr": ["198.18.0.0/15", "fc00::/18", "fd00:6152::/64"], "action": "reject"},
+      {"ip_cidr": ["0.0.0.0/8", "10.0.0.0/8", "100.64.0.0/10", "127.0.0.0/8", "169.254.0.0/16", "172.16.0.0/12", "192.168.0.0/16", "224.0.0.0/4", "::1/128", "fc00::/7", "fe80::/10", "ff00::/8"], "action": "route", "outbound": "DIRECT"},
+      {"ip_cidr": ["223.5.5.5/32"], "action": "route", "outbound": "DIRECT"},
+      {"ip_cidr": ["1.1.1.1/32"], "action": "route", "outbound": "PROXY"},
+      {"rule_set": ["sr-private"], "action": "route", "outbound": "DIRECT"},
+      {"rule_set": ["sr-reject"], "action": "reject"},
+      {"rule_set": ["sr-proxy"], "action": "route", "outbound": "PROXY"},
+      {"rule_set": ["sr-direct"], "action": "route", "outbound": "DIRECT"},
+      {"type": "logical", "mode": "and", "rules": [{"domain_regex": [".+"], "invert": true}, {"network": "tcp", "port": [80, 8080, 443, 8443]}], "action": "sniff", "sniffer": ["http", "tls"], "timeout": "300ms"},
+      {"type": "logical", "mode": "and", "rules": [{"domain_regex": [".+"], "invert": true}, {"network": "udp", "port": [443, 8443]}], "action": "sniff", "sniffer": ["quic"], "timeout": "300ms"},
+      {"rule_set": ["sr-private"], "action": "route", "outbound": "DIRECT"},
+      {"rule_set": ["sr-reject"], "action": "reject"},
+      {"rule_set": ["sr-proxy"], "action": "route", "outbound": "PROXY"},
+      {"rule_set": ["sr-direct"], "action": "route", "outbound": "DIRECT"},
+      {"rule_set": ["sr-cn-ip"], "action": "route", "outbound": "DIRECT"}
+    ],
+    "final": "PROXY"
+  },
+  "experimental": {"cache_file": {"enabled": true, "store_fakeip": true}}
+}

@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "manifest v1",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "scope",
+    "generated_at_utc",
+    "files",
+    "source_versions",
+    "sources"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "generated_at_utc": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "scope": {
+      "const": "domestic_direct_and_adblock"
+    },
+    "files": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string",
+        "pattern": "^[a-f0-9]{64}$"
+      }
+    },
+    "source_versions": {
+      "type": "object"
+    },
+    "sources": {
+      "type": "object"
+    },
+    "datasets": {
+      "type": "array",
+      "minItems": 5,
+      "maxItems": 5
+    },
+    "order": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  }
+}

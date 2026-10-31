@@ -1,0 +1,129 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "index v1",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "scope",
+    "generated_at_utc",
+    "datasets",
+    "order"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "generated_at_utc": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "scope": {
+      "const": "public_routing_data_only"
+    },
+    "files": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string",
+        "pattern": "^[a-f0-9]{64}$"
+      }
+    },
+    "source_versions": {
+      "type": "object"
+    },
+    "sources": {
+      "type": "object"
+    },
+    "datasets": {
+      "type": "array",
+      "minItems": 5,
+      "maxItems": 5,
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "action",
+          "mihomo_behavior",
+          "resources"
+        ],
+        "properties": {
+          "id": {
+            "enum": [
+              "private",
+              "reject",
+              "proxy",
+              "direct",
+              "cn-ip"
+            ]
+          },
+          "action": {
+            "enum": [
+              "DIRECT",
+              "PROXY",
+              "REJECT"
+            ]
+          },
+          "mihomo_behavior": {
+            "enum": [
+              "domain",
+              "ipcidr"
+            ]
+          },
+          "resources": {
+            "type": "object",
+            "required": [
+              "mihomo",
+              "surge",
+              "sing-box"
+            ],
+            "additionalProperties": {
+              "type": "object",
+              "required": [
+                "path",
+                "url",
+                "sha256",
+                "entries"
+              ],
+              "properties": {
+                "path": {
+                  "type": "string",
+                  "pattern": "^(mihomo|surge|sing-box)/[a-z-]+\\.(yaml|list|json)$"
+                },
+                "url": {
+                  "type": "string",
+                  "format": "uri"
+                },
+                "sha256": {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{64}$"
+                },
+                "entries": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "order": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "helpers": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "path",
+          "url",
+          "sha256",
+          "entries"
+        ]
+      }
+    }
+  }
+}
