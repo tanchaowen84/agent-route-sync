@@ -48,16 +48,16 @@ def verify_release(commit):
         if pure.is_absolute() or '..' in pure.parts or '\\' in path or not re.fullmatch(r'[0-9a-f]{64}', expected_hash):
             raise ValueError(f'Invalid manifest entry: {path}')
         data = read_blob(commit, path)
-        if len(data) > 16 * 1024 * 1024 or hashlib.sha256(data).hexdigest() != expected_hash:
+        if not data or len(data) > 16 * 1024 * 1024 or hashlib.sha256(data).hexdigest() != expected_hash:
             raise ValueError(f'Release hash/size mismatch: {path}')
     if 'index.json' not in files:
         raise ValueError('Manifest does not authenticate index.json')
     for row in datasets.values():
-        if any(item['entries'] <= 0 for item in row['resources'].values()):
+        if 'surge' not in row['resources'] or any(item['entries'] <= 0 for item in row['resources'].values()):
             raise ValueError('Empty dataset')
     resources = [item for row in datasets.values() for item in row['resources'].values()] + index.get('helpers', [])
     for item in resources:
-        if files.get(item['path']) != item['sha256']:
+        if item['path'] not in files or files[item['path']] != item['sha256']:
             raise ValueError(f'Index/manifest disagree: {item["path"]}')
     return manifest, index
 

@@ -43,6 +43,34 @@ class ReleaseValidation(unittest.TestCase):
             with self.assertRaises(ValueError):
                 sync.verify_release('commit')
 
+    def test_rejects_missing_resource_mapping(self):
+        data = self.payload()
+        index = json.loads(data['index.json'])
+        index['datasets'][0]['resources'] = {}
+        data['index.json'] = json.dumps(index).encode()
+        manifest = json.loads(data['manifest.json'])
+        manifest['files']['index.json'] = hashlib.sha256(data['index.json']).hexdigest()
+        data['manifest.json'] = json.dumps(manifest).encode()
+        with patch.object(sync, 'read_blob', side_effect=lambda _, p: data[p]):
+            with self.assertRaises(ValueError):
+                sync.verify_release('commit')
+
+    def test_rejects_empty_resource_even_with_valid_hashes(self):
+        data = self.payload()
+        path = 'surge/proxy.list'
+        data[path] = b''
+        digest = hashlib.sha256(b'').hexdigest()
+        index = json.loads(data['index.json'])
+        index['datasets'][2]['resources']['surge']['sha256'] = digest
+        data['index.json'] = json.dumps(index).encode()
+        manifest = json.loads(data['manifest.json'])
+        manifest['files'][path] = digest
+        manifest['files']['index.json'] = hashlib.sha256(data['index.json']).hexdigest()
+        data['manifest.json'] = json.dumps(manifest).encode()
+        with patch.object(sync, 'read_blob', side_effect=lambda _, p: data[p]):
+            with self.assertRaises(ValueError):
+                sync.verify_release('commit')
+
 
 class GitPublishing(unittest.TestCase):
     def test_publish_noop_rewritten_upstream_and_failure_preserves_refs(self):
