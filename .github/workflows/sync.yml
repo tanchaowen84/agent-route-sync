@@ -1,0 +1,27 @@
+name: Sync AgentRoute
+
+on:
+  schedule:
+    - cron: '17 0 * * *' # 08:17 Asia/Shanghai; GitHub schedules may be delayed.
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ['tools/**', 'tests/**', '.github/workflows/sync.yml']
+
+permissions:
+  contents: write
+
+concurrency:
+  group: agentroute-sync
+  cancel-in-progress: false
+
+jobs:
+  mirror:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Check sync validation
+        run: python3 -m unittest discover -s tests -v
+      - name: Verify and atomically publish public snapshots
+        run: python3 tools/sync_upstream.py
