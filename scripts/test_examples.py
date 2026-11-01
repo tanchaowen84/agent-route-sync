@@ -53,6 +53,20 @@ class TemplateTests(unittest.TestCase):
     def test_shadowrocket_has_no_nested_extended_matching(self):
         self.assertFalse(any('extended-matching' in rule for rule in rules_of('shadowrocket.conf')))
 
+    def test_shadowrocket_dns_paths(self):
+        text = (FULL / 'shadowrocket.conf').read_text(encoding='utf-8')
+        general = dict(line.split(' = ', 1) for line in text[text.index('[General]'):text.index('[Rule]')].splitlines()
+                       if ' = ' in line and not line.startswith('#'))
+        for key in ('dns-server', 'fallback-dns-server'):
+            self.assertTrue(all(url.endswith('#proxy') for url in general[key].split(', ')), key)
+        for key in ('direct-dns-server', 'proxy-dns-server'):
+            self.assertNotIn('#proxy', general[key], key)
+            self.assertIn('223.5.5.5', general[key], key)
+        self.assertNotIn('bypass-system', general)
+        host = text[text.index('[Host]'):]
+        for name in ('*.lan', '*.local', '*.home.arpa'):
+            self.assertIn(name + ' = server:system', host)
+
     def test_mihomo_template(self):
         config = yaml.safe_load((FULL / 'mihomo.yaml').read_text(encoding='utf-8'))
         rules = config['rules']

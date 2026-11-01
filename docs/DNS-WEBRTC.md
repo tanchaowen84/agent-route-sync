@@ -62,7 +62,21 @@ DoH 加密查询与 DNS 经代理是两件事：直连 DoH 仍可让解析服务
 
 ### Shadowrocket
 
-模板：[full/shadowrocket.conf](../examples/full/shadowrocket.conf)，**只做过文本结构检查，未在实体 iOS 上验证**，要如实报告。不要照搬 Surge 的嵌套 `extended-matching`：Shadowrocket 会把这个后缀当成地址的一部分。多个 DoH 的写法、IPv6 和规则刷新都要在实际 App 版本上核对。
+模板：[full/shadowrocket.conf](../examples/full/shadowrocket.conf)，**只做过文本结构检查，未在实体设备上验证**，要如实报告。字段含义取自社区维护的 [Shadowrocket 手册](https://github.com/LOWERTOP/Shadowrocket)，它不是官方文档，以实际 App 版本为准。
+
+| 字段 | 作用 | 模板的写法 |
+| --- | --- | --- |
+| `dns-server` | DNS 覆写。普通 DoH 地址不会经过节点，要加 `#proxy` 才由默认节点转发 | Cloudflare DoH 加 `#proxy` |
+| `fallback-dns-server` | 覆写失败或超过 2 秒时使用。留空等于系统 DNS | 同上，避免退回运营商解析 |
+| `direct-dns-server` | 解析命中直连域名规则的域名 | 阿里 DoH |
+| `proxy-dns-server` | **只解析节点域名**，不是“代理域名的 DNS” | 阿里 DoH，不依赖节点本身 |
+| `[Host]` 的 `server:system` | 把指定域名交给系统 DNS | `*.lan`、`*.local`、`*.home.arpa` |
+
+命中代理规则的域名默认由远端节点解析，不经过上面这些解析器。
+
+**已知限制：** 手册没有写 `[Host]` 能引用规则集，所以 `private` 名单不能整体走本地解析，其中的域名命中直连规则后会发给 `direct-dns-server`。用户确实使用的内网域名，要逐条加入 `[Host]`。`dns-direct-system = true` 能让所有直连域名走系统 DNS，但国内查询也会一起改走系统解析器，模板没有采用。
+
+手册里 `hijack-dns` 的例子是具体地址，模板的 `*:53` 没有例子佐证，要看实际日志确认。不要照搬 Surge 的嵌套 `extended-matching`：Shadowrocket 会把这个后缀当成地址的一部分。
 
 ### sing-box
 
