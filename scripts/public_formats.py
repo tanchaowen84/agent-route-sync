@@ -11,6 +11,9 @@ LOCAL = tuple(map(ipaddress.ip_network, (
     '169.254.0.0/16', '172.16.0.0/12', '192.168.0.0/16', '224.0.0.0/4',
     '::/128', '::1/128', 'fc00::/7', 'fe80::/10', 'ff00::/8')))
 SYNTHETIC = tuple(map(ipaddress.ip_network, ('198.18.0.0/15', 'fc00::/18', 'fd00:6152::/64')))
+# Real data is never close to this wide. A wider prefix means a damaged source line,
+# and publishing it would send a large part of the internet DIRECT for every client.
+BROADEST_CHINA_PREFIX = {4: 8, 6: 16}
 
 
 def public_china_networks(networks, minimum=1000):
@@ -23,6 +26,8 @@ def public_china_networks(networks, minimum=1000):
         if any(network.version == item.version and network.overlaps(item)
                for item in LOCAL + SYNTHETIC):
             raise ValueError('china_ip_overlaps_local_or_synthetic_range')
+        if network.prefixlen < BROADEST_CHINA_PREFIX[network.version]:
+            raise ValueError('china_ip_prefix_too_broad')
         result.append(network)
     if any(sum(n.version == version for n in result) < minimum for version in (4, 6)):
         raise ValueError('china_ip_address_family_empty_or_truncated')

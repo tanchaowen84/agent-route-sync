@@ -68,6 +68,14 @@ class PublicFormatTests(unittest.TestCase):
         values = public_china_networks(['1.0.0.0/24', '2400::/32', '10.0.0.0/8', 'fc00::/7'], minimum=1)
         self.assertEqual(list(map(str, values)), ['1.0.0.0/24', '2400::/32'])
 
+    def test_cn_ip_rejects_a_prefix_wider_than_any_real_allocation(self):
+        for values in (['32.0.0.0/3', '2400::/32'], ['1.0.0.0/24', '2000::/3'],
+                       ['4.0.0.0/7', '2400::/32'], ['1.0.0.0/24', '2400::/15']):
+            with self.subTest(values=values), self.assertRaisesRegex(ValueError, 'china_ip_prefix_too_broad'):
+                public_china_networks(values, minimum=1)
+        widest = public_china_networks(['36.0.0.0/8', '2400::/16'], minimum=1)
+        self.assertEqual(list(map(str, widest)), ['36.0.0.0/8', '2400::/16'])
+
 
 if __name__ == '__main__':
     unittest.main()

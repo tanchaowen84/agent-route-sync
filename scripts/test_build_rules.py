@@ -29,15 +29,36 @@ class SourceGenerationTests(unittest.TestCase):
                 + ['domain:ad' + str(i) + '.example' for i in range(1001)]) + '\n',
         }
 
-    def test_token_is_sent_only_to_the_api(self):
-        response = MagicMock(status=200)
+    def response(self, body, headers=None):
+        response = MagicMock(status=200, headers=headers or {})
         response.__enter__.return_value = response
-        response.read.return_value = b'data'
-        with patch.dict(os.environ, {'GITHUB_TOKEN': 'token'}), patch('urllib.request.urlopen', return_value=response) as opened:
+        response.read.return_value = body
+        return response
+
+    def test_token_is_sent_only_to_the_api(self):
+        with patch.dict(os.environ, {'GITHUB_TOKEN': 'token'}), patch('urllib.request.urlopen', return_value=self.response(b'data')) as opened:
             fetch('https://api.github.com/repos/a/b/commits/c')
             self.assertEqual(opened.call_args[0][0].get_header('Authorization'), 'Bearer token')
             fetch('https://raw.githubusercontent.com/a/b/c/d')
             self.assertIsNone(opened.call_args[0][0].get_header('Authorization'))
+
+    def test_download_shorter_than_declared_is_retried_then_rejected(self):
+        short = self.response(b'2400:da00::/3', {'Content-Length': '100000'})
+        with patch('urllib.request.urlopen', return_value=short) as opened, patch('time.sleep'), \
+             self.assertRaisesRegex(ValueError, 'download_truncated'):
+            fetch('https://raw.githubusercontent.com/a/b/c/d')
+        self.assertEqual(opened.call_count, 3)
+        complete = self.response(b'data', {'Content-Length': '4'})
+        with patch('urllib.request.urlopen', return_value=complete):
+            self.assertEqual(fetch('https://raw.githubusercontent.com/a/b/c/d'), 'data')
+
+    def test_build_refuses_a_china_prefix_cut_short(self):
+        for line in ('2000::/3', '32.0.0.0/3'):
+            raw = self.fixture()
+            raw['china_ip'] += line + '\n'
+            with self.subTest(line=line), tempfile.TemporaryDirectory() as folder, \
+                 self.assertRaisesRegex(ValueError, 'china_ip_prefix_too_broad'):
+                build(raw, Path(folder))
 
     def test_generation_preserves_foreign_input_and_private_matching_semantics(self):
         raw = self.fixture()

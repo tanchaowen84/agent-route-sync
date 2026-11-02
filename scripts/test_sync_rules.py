@@ -1,12 +1,14 @@
 import hashlib
 import json
+import os
 from pathlib import Path
+import stat
 import subprocess
 import sys
 import tempfile
 import unittest
 from datetime import datetime, timezone, timedelta
-from sync_rules import operate, selected, locked, validate_manifest, get, HELPER
+from sync_rules import operate, selected, locked, main, validate_manifest, get, HELPER
 from unittest.mock import patch, MagicMock
 
 class SyncTests(unittest.TestCase):
@@ -44,6 +46,52 @@ class SyncTests(unittest.TestCase):
         self.bad=None;self.age=49
         with self.assertRaises(ValueError):self.sync()
         self.assertEqual((self.root/'current.json').read_bytes(),before)
+    def test_rollback_holds_until_a_newer_release(self):
+        self.sync();self.sha='b'*40;self.sync()
+        self.assertEqual(operate('rollback',self.root)['generation'],'a'*40+'-all')
+        held=self.sync()
+        self.assertEqual((held['status'],held['generation'],held['held_generation']),('held','a'*40+'-all','b'*40+'-all'))
+        self.assertEqual(operate('verify',self.root)['generation'],'a'*40+'-all')
+        self.sha='c'*40;updated=self.sync()
+        self.assertEqual((updated['status'],updated['generation']),('updated','c'*40+'-all'))
+        self.assertNotIn('held',json.loads((self.root/'current.json').read_text()))
+        self.assertEqual(sorted(p.name[0] for p in (self.root/'generations').iterdir()),['a','c'])
+    def test_second_rollback_undoes_the_first(self):
+        self.sync();self.sha='b'*40;self.sync()
+        operate('rollback',self.root)
+        self.assertEqual(operate('rollback',self.root)['generation'],'b'*40+'-all')
+        self.assertEqual(self.sync()['status'],'unchanged')
+    def test_pointer_written_before_holds_existed_still_works(self):
+        self.sync();pointer=self.root/'current.json'
+        self.assertNotIn('held',json.loads(pointer.read_text()))
+        self.sha='b'*40;self.assertEqual(self.sync()['status'],'updated')
+    def test_malformed_documents_are_reported_as_json(self):
+        date=datetime.now(timezone.utc).isoformat()
+        valid={'schema_version':1,'scope':'domestic_direct_and_adblock','generated_at_utc':date}
+        data={n:b'payload' for n in selected('all')};data['index.json']=b'[]'
+        with_index={**valid,'files':{n:hashlib.sha256(v).hexdigest() for n,v in data.items()}}
+        for manifest,error in (([],'unsupported_manifest'),({**valid,'files':{},'generated_at_utc':5},'invalid_timestamp'),(with_index,'index_generation_mismatch')):
+            def fetch(url,manifest=manifest):
+                if url.endswith('/commits/release'):return json.dumps({'sha':self.sha}).encode()
+                if url.endswith('/manifest.json'):return json.dumps(manifest).encode()
+                return data[url.split('/'+self.sha+'/')[1]]
+            with self.subTest(error=error):
+                with self.assertRaisesRegex(ValueError,error):operate('sync',self.root,fetch=fetch)
+                # The real entry point prints JSON and exits 1 instead of a traceback.
+                out=MagicMock()
+                with patch('sync_rules.operate',lambda command,root,fmt,fetch=fetch:operate(command,root,fmt,fetch=fetch)),patch.object(sys,'argv',['sync_rules.py','sync','--output',str(self.root)]),patch('builtins.print',out):
+                    self.assertEqual(main(),1)
+                self.assertEqual(json.loads(out.call_args[0][0])['error'],error)
+    @unittest.skipIf(os.name=='nt','POSIX file modes')
+    def test_cache_follows_the_umask_so_another_user_can_read_it(self):
+        for mask,folder,file in ((0o022,0o755,0o644),(0o077,0o700,0o600)):
+            root=self.root/oct(mask);old=os.umask(mask)
+            try:result=operate('sync',root,fetch=self.fetch)
+            finally:os.umask(old)
+            with self.subTest(mask=oct(mask)):
+                self.assertEqual(stat.S_IMODE(Path(result['directory']).stat().st_mode),folder)
+                self.assertEqual(stat.S_IMODE((root/'current.json').stat().st_mode),file)
+                self.assertEqual(stat.S_IMODE((Path(result['directory'])/'surge/direct.list').stat().st_mode),file)
     def test_corruption_detected(self):
         result=self.sync();(Path(result['directory'])/'surge/direct.list').write_bytes(b'bad')
         with self.assertRaises(ValueError):operate('verify',self.root)

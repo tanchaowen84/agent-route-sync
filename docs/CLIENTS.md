@@ -1,124 +1,65 @@
-# 客户端接入
+# 客户端适配原则
 
-本文回答三个问题：用哪个模板、改动放哪里才不会丢、每个客户端有哪些坑。整体流程见 [AGENTS](../AGENTS.md)。
+整体流程见 [AGENTS](../AGENTS.md)。本页提供资源、规则语义和适配边界；字段、界面、命令以**目标设备实际版本**为准。使用者的 Agent 负责查询资料、选择实现并验证，不要求项目维护者适配每一种客户端。
 
-## 选模板
+<a id="tun-required"></a>
 
-| 客户端 | 模板 | 规则格式 |
+## TUN 前置检查
+
+接入要求 TUN 或经核实的等效系统隧道，包括客户端对应的增强模式或系统 VPN 接管能力。检查运行状态、系统路由以及目标应用的流量和 DNS 路径，IPv6 单独验收；仅有开关、配置字段或虚拟网卡不够。
+
+尚未启用时，按实际版本给使用者具体开启步骤和独立恢复方法，待其启用、确认后再接入。系统代理、浏览器代理或 mixed 入站不能替代；无法启用或无法确认时保持原配置，报告等待用户，不降级宣称部分接入成功。TUN 也不能替代规则模式与 DNS 路径检查。
+
+## 资源与规则语义
+
+[机器索引](https://raw.githubusercontent.com/ryuu-restart/agent-route/release/index.json)列出资源地址、格式及条目数，[清单](https://raw.githubusercontent.com/ryuu-restart/agent-route/release/manifest.json)记录发布信息与摘要。公开读取无需凭据。
+
+| 客户端 / 核心 | 使用格式 | 资料入口 |
 | --- | --- | --- |
-| Mihomo / Clash Meta / FlClash / Clash Verge Rev | [full/mihomo.yaml](../examples/full/mihomo.yaml) | YAML `payload`，域名 `behavior: domain`，IP `ipcidr` |
-| Surge | [full/surge.conf](../examples/full/surge.conf) | 无策略列的 `RULE-SET` 文本 |
-| Shadowrocket | [full/shadowrocket.conf](../examples/full/shadowrocket.conf) | 同 Surge；刷新周期在 App 内设置 |
-| sing-box | [full/sing-box.json](../examples/full/sing-box.json) | JSON source rule-set version 3 |
+| Mihomo 及其图形客户端 | `mihomo/<规则>.yaml`，域名与 IP 使用相应 behavior | [规则集](https://wiki.metacubex.one/config/rule-providers/)、[DNS](https://wiki.metacubex.one/config/dns/) |
+| Surge / Shadowrocket | `surge/<规则>.list`，无策略列的 RULE-SET 文本 | [Surge 规则集](https://manual.nssurge.com/rules/ruleset.html)；Shadowrocket 核对 App 内说明和实际能力，不直接照搬 Surge 字段 |
+| sing-box 及其图形客户端 | `sing-box/<规则>.json`，source rule-set version 3 | [规则集](https://sing-box.sagernet.org/configuration/rule-set/)、[迁移说明](https://sing-box.sagernet.org/migration/) |
 
-模板包含 DNS、嗅探、DNS 服务器路由和完整规则顺序。用户的 DNS 已按 [DNS-WEBRTC](DNS-WEBRTC.md) 配好时，只取 `AgentRoute managed` 标记之间的规则即可。
+`<规则>` 为 private、reject、proxy、direct、cn-ip；地址前缀为 `https://raw.githubusercontent.com/ryuu-restart/agent-route/release/`。格式版本是实际兼容要求，不是文档装饰。旧格式公开地址继续保留，但新接入优先选择索引中的标准资源。
+
+完整接入保持：**用户例外 → 节点地址 → 本地与 LAN → DNS 服务器路径 → private → reject → proxy → direct → cn-ip → 默认代理**。按客户端能力实现等效语义，不要求逐行照搬模板；FakeIP / 合成地址不能当成真实 LAN 或中国 IP 直连。
+
+private 为通用内网域名；direct 只含域名，cn-ip 只含公网中国 IPv4 / IPv6。保留精确域名与后缀的区别。cn-ip 在域名策略之后兜底，需实际获得真实地址；不能因混合答案中存在一个中国 IP 就全部直连。sing-box 的 non-cn-ip 辅助集可用于 DNS 判断，具体实现按版本确认。个人节点、业务例外和广告白名单由使用者维护。
 
 <a id="baseline"></a>
 
-### 验证基线
+## 版本与可选示例
 
-| 客户端 | 版本 | 验证到什么程度 |
-| --- | --- | --- |
-| Mihomo | 1.19.32 | 配置检查；隔离实例中规则加载、DNS 与分流命中 |
-| sing-box | 1.14.4（模板需要 1.14.0+） | 配置检查；隔离实例中 DNS 答案筛选与分流命中 |
-| Surge | Mac 5.10.0+（`[Host]` 引用规则集需要） | 只做配置检查 |
-| Shadowrocket | 未限定 | **只做文本结构检查，实体 iOS 未验证** |
+先核对真实核心而非仅看 GUI 版本，再查对应版本的官方配置文档、迁移说明、程序帮助或配置 Schema。版本不同先确认能力，不直接要求升级或降级；没有可靠依据时报告不确定性。仅有社区资料时注明来源性质，并用实际检查与运行证据核实，不能写成官方已保证。
 
-以上都未覆盖真实 TUN、实体手机、持续负载和真实泄露测试。低于基线时不要照搬模板：按实际版本的文档适配，或问用户是否升级。旧版 Clash 分支不支持全部字段。
+四套[完整示例及历史验证记录](../examples/README.md)仅供参考。示例支持的功能、验证版本和限制不等于整个项目的最低版本或未来兼容承诺。已有配置符合目标时保留，也可不使用模板。
+
+<a id="config-check"></a>
+
+## 配置检查
+
+选用当前客户端真实支持的检查命令、配置检查器或导入校验；命令、路径和参数从实际帮助确认。检查候选文件及 GUI 最终生成的有效配置，不能只检查片段。无可用入口就注明未做原生检查，并明确可获得的导入、加载及运行证据。
+
+配置语法通过不代表资源已加载、DNS 走向正确或设备已接管。资源、规则、DNS 等依赖应在应用前齐备；不能为了测试而另起未管理的代理或第二条 TUN。
 
 <a id="where-changes-survive"></a>
 
-## 改动放哪里
+## 配置持久化
 
-**这一节决定接入能否长期有效。** 配置由订阅生成时，直接改文件，下次刷新就被冲掉。先判断配置来源，再选位置。
+先确认配置是本地编辑、订阅生成还是托管。使用该版本支持的持久覆写、扩展或模块机制；核对它是合并还是整段替换，以及实际规则顺序。保留用户例外，不让受管规则提前覆盖它们，也不让旧最终规则抢先命中。
 
-| 客户端 | 配置来源 | 改动放哪里 | 依据 |
-| --- | --- | --- | --- |
-| Mihomo 核心 | 本地文件 | 直接改文件。节点来自订阅的，用 `proxy-providers`，规则不受订阅影响 | 官方文档 |
-| Clash Verge Rev | 订阅 | 规则用“编辑规则”的前置规则；DNS 和嗅探用“扩展配置”或“扩展脚本” | [规则](https://www.clashverge.dev/guide/rules.html)、[扩展](https://www.clashverge.dev/guide/extend.html) |
-| FlClash | 订阅 | 完整订阅负责 DNS，要关闭“DNS 覆写”和“追加系统 DNS”。规则覆盖方式按当前版本确认，确认不了就问用户 | 2026-10 实测 DNS 开关；覆盖方式未核实 |
-| Surge | 自己的配置 | 直接改，或用 Detached Profile | [手册](https://manual.nssurge.com/) |
-| Surge | 托管配置 | 用模块，但有限制，见下方 | [模块](https://manual.nssurge.com/profile/module.html) |
-| Shadowrocket | 任意 | 按当前 App 版本确认本地配置和模块的行为 | 未核实 |
-| sing-box GUI | 远程配置 | 远程配置更新会覆盖。改用本地配置，或让生成方合并模板 | 未核实，按当前版本确认 |
-| 其他 GUI | 订阅 | 找“覆写 / 扩展 / Override”功能。找不到就停下问用户，不要改订阅原文 | — |
+找不到可靠的持久化位置时，说明改订阅原文或另建本地配置的影响，取得用户选择；不要静默换配置来源。节点变化后，节点连接例外和引导解析也需重新核对。接入后刷新订阅，并在获准重启后复查实际配置；没做就不能报告已持久化。
 
-### Clash Verge Rev 的合并陷阱
+<a id="limited-integration"></a>
 
-扩展配置写到的列表和 `dns` 字段会**整段替换**，包括 `nameserver-policy`，没写的字段保留。所以：
+## 能力不足与受限接入
 
-- 要保留订阅原有的条目，用扩展脚本（`main(config)`）追加，不要用扩展配置覆盖。
-- `mixed-port`、`mode`、`ipv6`、`allow-lan`、`tun.enable` 等由应用设置页控制，写在扩展里会被丢弃，要到设置页改。
-- 官方文档明确“编辑规则”不会随订阅更新失效；扩展是否每次刷新后重新应用，文档没有逐字说明，接入后刷新一次订阅实测。
+托管配置或模块可能限制可用策略和排序。先按官方资料与现场检查确认限制；若无法保持规则语义，说明缺失能力和替代方案，取得用户选择。没有可靠方案或用户未接受限制时停止相关修改。
 
-### Surge 托管配置的模块限制
+用户明确接受受限接入时，只列实际接入的资源、主配置承接的行为和未实现项，最终最多报告部分完成。TUN 门槛、DNS / WebRTC 目标、用户例外保护不因此豁免；已确认的错误路径不能被改名为“受限”而判通过。[Surge 模块手册](https://manual.nssurge.com/profile/module.html)是这类限制的一个例子，不是其他客户端的通用实现。
 
-托管配置不能直接编辑，模块是官方给的办法，但：
+## 更新与验证责任
 
-- 模块里的规则**只能用内置策略**（DIRECT、REJECT、REJECT-TINYGIF），`RULE-SET,...proxy.list,PROXY` 放不进去。
-- 模块不能改 `[Proxy]` 和 `[Proxy Group]`，模块的启用状态也不跨设备同步。
+规则每日 UTC+8 06:30 计划构建，可能延迟，以清单时间为准；验证失败保留旧发布。客户端通常约每 24 小时刷新，资源须真实加载且不为空；下载路径由现场网络和可用缓存决定。各资源不保证同时切换，严格同代下载、校验与本地回退见 [SYNC](SYNC.md)。
 
-因此托管配置下只能把 private、reject、direct、cn-ip 和 `[Host]` 放进模块，海外流量依靠托管配置原有的最终规则走代理。代价是少了“proxy 先于 direct”这一层保护。如果用户要完整顺序，就问他们是否改用自己的非托管配置。
-
-### 订阅刷新后复查
-
-配置放好后，手动刷新一次订阅，再确认规则和 DNS 还在。这一步没做，就不能报告“已持久化”。
-
-## 规则顺序及原因
-
-**用户例外 → 节点地址 → 本地与 LAN → DNS 服务器地址 → private → reject → proxy → direct → cn-ip → 默认代理。**
-
-| 顺序 | 为什么 |
-| --- | --- |
-| 用户例外最先 | 用户明确的选择优先于任何名单 |
-| 节点地址早于一切代理规则 | 否则连接节点的流量可能又被送进代理，形成循环 |
-| FakeIP 段早于 LAN | `fc00::/7` 这条 LAN 规则包含 FakeIP 的 IPv6 段，顺序反了 FakeIP 流量会被当成内网直连 |
-| DNS 服务器地址早于名单 | 决定 DoH 连接走直连还是代理，每个备用解析器都要有规则 |
-| private 早于 reject 和 proxy | 精确的 `router.asus.com` 不应被 `.asus.com` 海外后缀覆盖 |
-| proxy 早于 direct | 防止海外域名被国内名单误判直连 |
-| cn-ip 在所有域名规则之后 | 它是兜底，且需要解析出真实 IP 才能判断 |
-
-几个细节：
-
-- 这里的 `private` 指通用内网域名规则，不是维护者的私密数据。
-- 不要把精确域名扩成后缀。Mihomo 的 `+.example.com` 同时覆盖根域名和子域名；sing-box 的 `domain` 和 `domain_suffix` 分开保存。
-- `direct` **只含域名**，`cn-ip` **只含公网中国 IP**。cn-ip 已剔除 LAN 和合成地址。
-- 个人强制代理域名、业务直连 IP、App 专用例外、广告白名单和节点不在共享数据里，放在用户自己的配置中。
-
-### cn-ip 能兜住未知域名吗
-
-取决于客户端的解析流程。模板有意不给 cn-ip 加 `no-resolve`。
-
-- **Mihomo / Surge**：未知域名会解析后再匹配 IP。解析失败走默认代理。
-- **sing-box**：路由规则不会替域名做解析。模板在 DNS 层判断：答案**全部**是中国 IP 才返回真实地址，连接随后命中 cn-ip；混合、海外或解析失败都继续走 FakeIP 和代理。这段逻辑需要 `sing-box/non-cn-ip.json`，它只用于 DNS 判断，不是路由规则集。
-- **直接以 SOCKS / HTTP 传入 sing-box 的未知域名**不经过这个 DNS 判断，会走默认代理。这是偏安全的结果，不算故障。
-
-## 稳定资源地址
-
-基础地址为 `https://raw.githubusercontent.com/ryuu-restart/agent-route/release/`，全部公开，无需凭据。
-
-| 规则 | 动作 | Surge / Shadowrocket | Mihomo | sing-box |
-| --- | --- | --- | --- | --- |
-| 私有 / 内网域名 | DIRECT | [private.list](https://raw.githubusercontent.com/ryuu-restart/agent-route/release/surge/private.list) | [private.yaml](https://raw.githubusercontent.com/ryuu-restart/agent-route/release/mihomo/private.yaml) | [private.json](https://raw.githubusercontent.com/ryuu-restart/agent-route/release/sing-box/private.json) |
-| 广告域名 | REJECT | [reject.list](https://raw.githubusercontent.com/ryuu-restart/agent-route/release/surge/reject.list) | [reject.yaml](https://raw.githubusercontent.com/ryuu-restart/agent-route/release/mihomo/reject.yaml) | [reject.json](https://raw.githubusercontent.com/ryuu-restart/agent-route/release/sing-box/reject.json) |
-| 海外域名 | 自己的 PROXY | [proxy.list](https://raw.githubusercontent.com/ryuu-restart/agent-route/release/surge/proxy.list) | [proxy.yaml](https://raw.githubusercontent.com/ryuu-restart/agent-route/release/mihomo/proxy.yaml) | [proxy.json](https://raw.githubusercontent.com/ryuu-restart/agent-route/release/sing-box/proxy.json) |
-| 国内域名 | DIRECT | [direct.list](https://raw.githubusercontent.com/ryuu-restart/agent-route/release/surge/direct.list) | [direct.yaml](https://raw.githubusercontent.com/ryuu-restart/agent-route/release/mihomo/direct.yaml) | [direct.json](https://raw.githubusercontent.com/ryuu-restart/agent-route/release/sing-box/direct.json) |
-| 中国 IPv4 / IPv6 | DIRECT 兜底 | [cn-ip.list](https://raw.githubusercontent.com/ryuu-restart/agent-route/release/surge/cn-ip.list) | [cn-ip.yaml](https://raw.githubusercontent.com/ryuu-restart/agent-route/release/mihomo/cn-ip.yaml) | [cn-ip.json](https://raw.githubusercontent.com/ryuu-restart/agent-route/release/sing-box/cn-ip.json) |
-
-机器入口：[index.json](https://raw.githubusercontent.com/ryuu-restart/agent-route/release/index.json)；同批时间、来源及 SHA-256：[manifest.json](https://raw.githubusercontent.com/ryuu-restart/agent-route/release/manifest.json)。`index.json` 是本项目版本化的索引，不是客户端配置或通用标准协议。
-
-规则下载默认经 `PROXY`：`raw.githubusercontent.com` 在部分网络无法直连。代理不可用时，客户端继续使用已缓存的上一份规则。
-
-## 更新与失败保留
-
-规则每天 **UTC+8 06:30** 计划构建，调度可能延迟，以 manifest 时间为准。每次先跑测试，再生成并通过官方 Mihomo / sing-box 原生检查，最后一次性切换 `release` 分支。失败时不发布，旧规则仍然可用。
-
-客户端按远程地址约每 24 小时刷新，各设备刷新时刻不同。
-
-## 兼容旧消费者
-
-根目录原有的 `direct.list` / `direct.json` / `direct.domains` / `direct.ipcidr`、`private.domains`、`proxy-source.txt`、`reject.domains` / `reject.list` / `reject.json` 和 manifest 字段继续保留。旧 `direct.list` / `direct.json` 混合了域名、LAN 和 IP，不能用来替换新目录中的纯域名资源。消费者不要假设 manifest 的 `files` 永远只有固定数量。
-
-## 依据与局限
-
-格式依据：[Mihomo rule-providers](https://wiki.metacubex.one/config/rule-providers/) · [Surge RULE-SET](https://manual.nssurge.com/rules/ruleset.html) · [sing-box rule-set](https://sing-box.sagernet.org/configuration/rule-set/)。DNS 和域名过滤不能可靠消除与正常内容共用域名的视频广告；原生检查不等于每台设备的真实网络验收。
+项目测试验证规则与记录的示例；目标设备的加载、分流、DNS、WebRTC 和持久化由使用者的 Agent 实测。最终按 [DNS-WEBRTC](DNS-WEBRTC.md#acceptance)交付，不能把项目 CI 或别人的设备结果当成自己的验收。

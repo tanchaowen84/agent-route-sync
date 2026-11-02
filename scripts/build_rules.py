@@ -9,17 +9,12 @@ from pathlib import Path
 import re
 import time
 import urllib.request
-from public_formats import export
+from public_formats import LOCAL, export
 
 ROOT = Path(__file__).resolve().parents[1]
 REGISTRY = json.loads((ROOT / 'sources.json').read_text(encoding='utf-8'))
 SOURCES = {key: 'https://raw.githubusercontent.com/' + value['repository'] + '/' + value['ref'] + '/' + value['path'] for key, value in REGISTRY['inputs'].items()}
 
-LOCAL_NETWORKS = [
-    '0.0.0.0/8', '10.0.0.0/8', '100.64.0.0/10', '127.0.0.0/8',
-    '169.254.0.0/16', '172.16.0.0/12', '192.168.0.0/16',
-    '224.0.0.0/4', '::/128', '::1/128', 'fc00::/7', 'fe80::/10', 'ff00::/8',
-]
 DOMAIN = re.compile(r'^[-_a-zA-Z0-9]+(?:\.[-_a-zA-Z0-9]+)*$')
 
 
@@ -35,9 +30,14 @@ def fetch(url):
                 limit = 16 * 1024 * 1024
                 data = response.read(limit + 1)
                 if not (response.status == 200 and data):
-                    raise ValueError('generation_inventory_invalid')
+                    raise ValueError('download_invalid')
                 if len(data) > limit:
                     raise ValueError('rule_source_too_large')
+                # A sized read does not raise when the connection drops early, and a
+                # line cut short can still parse: /32 becomes /3.
+                declared = response.headers.get('Content-Length')
+                if declared and len(data) != int(declared):
+                    raise ValueError('download_truncated')
                 return data.decode('utf-8')
         except Exception:
             if attempt == 2:
@@ -127,36 +127,36 @@ def private_domains(text):
 def build(raw, output, versions=None):
     ad_exact, ad_suffix = advertising_domains(raw['advertising_domains'])
     exact, suffix = domains(raw['china_domains'])
-    if not (len(exact) + len(suffix) > 1000):
+    if len(exact) + len(suffix) <= 1000:
         raise ValueError('china_domain_dataset_empty_or_truncated')
     foreign_exact, foreign_suffix = domains(raw['foreign_domains'])
-    if not (len(foreign_exact) + len(foreign_suffix) > 1000):
+    if len(foreign_exact) + len(foreign_suffix) <= 1000:
         raise ValueError('foreign_domain_dataset_empty_or_truncated')
     before_domain_count = len(exact) + len(suffix)
     exact, suffix = exclude_foreign(exact, suffix, foreign_exact, foreign_suffix)
     excluded_count = before_domain_count - len(exact) - len(suffix)
-    if not (not any(matches(domain, exact, suffix) for domain in
-                   ('www.gstatic.com', 'www.google.com', 'www.wikipedia.org', 'api.github.com'))):
+    if any(matches(domain, exact, suffix) for domain in
+           ('www.gstatic.com', 'www.google.com', 'www.wikipedia.org', 'api.github.com')):
         raise ValueError('foreign_domain_would_be_direct')
-    if not (all(matches(domain, exact, suffix) for domain in
-               ('www.baidu.com', 'www.qq.com', 'www.taobao.com', 'www.jd.com'))):
+    if not all(matches(domain, exact, suffix) for domain in
+               ('www.baidu.com', 'www.qq.com', 'www.taobao.com', 'www.jd.com')):
         raise ValueError('domestic_domain_would_be_proxied')
     private_exact, private_suffix = private_domains(raw['private_domains'])
     exact.update(private_exact)
     suffix.update(private_suffix | {'local', 'lan', 'home.arpa'})
     exact.add('localhost')
-    networks = set(LOCAL_NETWORKS)
+    networks = set(map(str, LOCAL))
     china_network_count = 0
     for line in raw['china_ip'].splitlines():
         line = line.strip()
         if not line or line.startswith('#'):
             continue
         network = ipaddress.ip_network(line, strict=False)
-        if not (network.prefixlen != 0):
+        if network.prefixlen == 0:
             raise ValueError('universal_direct_route_forbidden')
         networks.add(str(network))
         china_network_count += 1
-    if not (china_network_count > 1000):
+    if china_network_count <= 1000:
         raise ValueError('china_ip_dataset_empty_or_truncated')
     ordered_networks = sorted(networks, key=lambda n: (ipaddress.ip_network(n).version,
                                                       int(ipaddress.ip_network(n).network_address),
@@ -209,13 +209,13 @@ def build(raw, output, versions=None):
     manifest['source_versions'] = versions or {}
     manifest['skipped_syntax'] = {key: {kind: sum(line.strip().startswith(kind + ':') for line in text.splitlines()) for kind in ('regexp', 'keyword')} for key, text in raw.items() if key != 'china_ip'}
     manifest['freshness_scope'] = 'this_publication_not_upstream_commit_age'
-    for name in ['sources.json', 'NOTICE.md'] + [copy['path'] for p in REGISTRY['projects'] for copy in p.get('license_copies', [])]:
+    for name in ['LICENSE', 'sources.json', 'NOTICE.md'] + [copy['path'] for p in REGISTRY['projects'] for copy in p.get('license_copies', [])]:
         data = (ROOT / name).read_bytes()
         (output / name).parent.mkdir(parents=True, exist_ok=True)
         (output / name).write_bytes(data)
         manifest['files'][name] = hashlib.sha256(data).hexdigest()
     (output / 'manifest.json').write_bytes((json.dumps(manifest, indent=2) + '\n').encode("utf-8"))
-    if not ({p.relative_to(output).as_posix() for p in output.rglob('*') if p.is_file()} == set(manifest['files']) | {'manifest.json'}):
+    if {p.relative_to(output).as_posix() for p in output.rglob('*') if p.is_file()} != set(manifest['files']) | {'manifest.json'}:
         raise ValueError('generation_inventory_invalid')
     return manifest
 

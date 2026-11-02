@@ -8,9 +8,9 @@ import json
 import os
 from pathlib import Path
 import re
+import secrets
 import shutil
 import sys
-import tempfile
 import urllib.request
 
 REPO = 'ryuu-restart/agent-route'
@@ -36,9 +36,10 @@ def get(url):
 
 
 def atomic(path, value):
-    fd, name = tempfile.mkstemp(prefix='.pointer-', dir=path.parent)
+    # Follows the umask, like the rule files: a client may run as another user.
+    name = path.with_name('.pointer-' + secrets.token_hex(8))
     try:
-        with os.fdopen(fd, 'w', encoding='utf-8') as f:
+        with open(name, 'x', encoding='utf-8') as f:
             json.dump(value, f); f.flush(); os.fsync(f.fileno())
         os.replace(name, path)
     finally:
@@ -84,12 +85,13 @@ def directory(root, generation):
 
 
 def validate_manifest(m):
-    if m.get('scope') != 'domestic_direct_and_adblock' or m.get('schema_version', 1) != 1:
+    if not isinstance(m, dict) or m.get('scope') != 'domestic_direct_and_adblock' or m.get('schema_version', 1) != 1:
         raise ValueError('unsupported_manifest')
     if not isinstance(m.get('files'), dict): raise ValueError('invalid_file_map')
     for name, digest in m['files'].items():
         if not re.fullmatch(r'[A-Za-z0-9_.-]+(?:/[A-Za-z0-9_.-]+)*', name) or any(p in ('.', '..') for p in name.split('/')) or not isinstance(digest, str) or not DIGEST.fullmatch(digest):
             raise ValueError('unsafe_manifest_path_or_digest')
+    if not isinstance(m.get('generated_at_utc'), str): raise ValueError('invalid_timestamp')
     date = datetime.fromisoformat(m['generated_at_utc'].replace('Z', '+00:00'))
     if date.tzinfo is None: raise ValueError('missing_timestamp_timezone')
     return (datetime.now(timezone.utc) - date).total_seconds()
@@ -124,13 +126,16 @@ def operate(command, root, fmt='all', fetch=get):
         state = pointer(root)
         for key in ('current', 'previous'):
             if state[key]: directory(root, state[key])
+        held = state.get('held')
+        if held: directory(root, held)
         if command in ('status', 'verify'):
             if not state['current']: raise ValueError('cache_empty')
             return {'status': 'verified', **verify(root, state['current']), 'previous': state['previous']}
         if command == 'rollback':
             if not state['previous']: raise ValueError('previous_generation_unavailable')
             result = verify(root, state['previous'])
-            atomic(root / 'current.json', {'current': state['previous'], 'previous': state['current']})
+            # Remember what the user backed out of, or the next sync would select it again.
+            atomic(root / 'current.json', {'current': state['previous'], 'previous': state['current'], 'held': state['current']})
             return {'status': 'rolled_back', **result}
         if state['current']:
             verify(root, state['current'])
@@ -142,9 +147,13 @@ def operate(command, root, fmt='all', fetch=get):
         generation = sha + '-' + fmt
         if state['current'] == generation:
             return {'status': 'unchanged', **verify(root, generation)}
+        if held == generation:
+            return {'status': 'held', 'held_generation': held, **verify(root, state['current'])}
         dest = directory(root, generation)
         dest.parent.mkdir(exist_ok=True)
-        stage = Path(tempfile.mkdtemp(prefix='.stage-', dir=dest.parent))
+        # Not mkdtemp: its 0700 would stay on the published generation directory.
+        stage = dest.parent / ('.stage-' + secrets.token_hex(8))
+        stage.mkdir()
         try:
             (stage / 'manifest.json').write_bytes(raw)
             names = selected(fmt) + ([HELPER] if fmt in ('all', 'sing-box') and HELPER in m['files'] else [])
@@ -154,7 +163,7 @@ def operate(command, root, fmt='all', fetch=get):
                     raise ValueError('resource_hash_mismatch')
                 p = stage / name; p.parent.mkdir(exist_ok=True); p.write_bytes(data)
             index = json.loads((stage / 'index.json').read_bytes())
-            if index.get('schema_version') != 1 or index.get('generated_at_utc') != m['generated_at_utc']:
+            if not isinstance(index, dict) or index.get('schema_version') != 1 or index.get('generated_at_utc') != m['generated_at_utc']:
                 raise ValueError('index_generation_mismatch')
             (stage / 'cache.json').write_text(json.dumps({'files': names}), encoding='utf-8')
             if dest.exists(): verify(root, generation)

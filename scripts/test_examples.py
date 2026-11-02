@@ -1,8 +1,7 @@
 """Offline invariants of the published templates. Native loading lives in validate_native.py."""
-import hashlib
 import json
+import os
 from pathlib import Path
-import re
 import unittest
 
 import yaml
@@ -11,14 +10,17 @@ from public_formats import BASE_URL, DATASETS
 
 ROOT = Path(__file__).resolve().parents[1]
 FULL = ROOT / 'examples/full'
-# Digests rather than names: this file is public and must not spell out private entries.
-PRIVATE_TOKENS = {
-    'c0cad4e36be3cf2f3679040b44cd03a295baffaa6caaf21657bfba6bb6217bd0',
-    'ca7f10c84b3724c9dfa1e8f836f1af30f0a213339b3ce99f086cb42cb21a9fd8',
-    '696d96757d207860e9681cdf3305737c6c932d204275a4b7a6d72217b6c56ca6',
-    'b753ddc8bba8b51f4e1e8f3b271a021990cb1d6c335734c46435359252bc3664',
-    '234d0eab29efe048332ec20248604d53470349befa4221f8ef5b4f3c83af8774',
-}
+TEXT_SUFFIXES = {'.md', '.py', '.json', '.yaml', '.yml', '.conf', '.txt'}
+
+
+def published_text():
+    """Every text file this repository publishes, except upstream licences and this file."""
+    top = [path for path in ROOT.iterdir() if path.is_file()]
+    nested = [path for folder in ('.github', 'docs', 'examples', 'schemas', 'scripts')
+              for path in (ROOT / folder).rglob('*') if path.is_file()]
+    for path in sorted(top + nested):
+        if path.suffix in TEXT_SUFFIXES and path != Path(__file__).resolve():
+            yield path.relative_to(ROOT).as_posix(), path.read_text(encoding='utf-8')
 
 
 def rules_of(name):
@@ -107,17 +109,26 @@ class TemplateTests(unittest.TestCase):
 
 
 class PublishedTextTests(unittest.TestCase):
-    def test_published_text_has_no_private_or_internal_wording(self):
-        names = ['README.md', 'AGENTS.md', 'scripts/build_rules.py', 'scripts/sync_rules.py', *map(str, (p.relative_to(ROOT) for p in (ROOT / 'docs').glob('*.md'))),
-                 *map(str, (p.relative_to(ROOT) for p in FULL.iterdir()))]
-        for name in names:
-            text = (ROOT / name).read_text(encoding='utf-8')
+    def test_published_text_has_no_internal_wording(self):
+        names = dict(published_text())
+        for expected in ('README.md', 'NOTICE.md', 'sources.json', 'docs/SYNC.md', 'examples/full/surge.conf',
+                         'schemas/index.schema.json', 'scripts/public_formats.py', '.github/workflows/run.yml'):
+            self.assertIn(expected, names)
+        for name, text in names.items():
             with self.subTest(name=name):
                 self.assertNotRegex(text, '按用户(要求|指定)')
                 # A released GitHub name can be registered by anyone, so it must never be read from again.
                 self.assertNotIn('heibai0502', text.lower())
-                tokens = re.findall(r'[A-Za-z0-9][A-Za-z0-9.-]+', text)
-                self.assertFalse({hashlib.sha256(t.lower().encode()).hexdigest() for t in tokens} & PRIVATE_TOKENS)
+
+    def test_published_text_has_no_private_words(self):
+        # The maintainer supplies the word list; it never belongs in this public repository.
+        source = os.environ.get('AGENTROUTE_PRIVATE_WORDS_FILE')
+        if not source:
+            self.skipTest('no private word list supplied')
+        words = [line.strip().lower() for line in Path(source).read_text(encoding='utf-8').splitlines() if line.strip()]
+        self.assertTrue(words)
+        # File names only: test output can end up in public logs.
+        self.assertEqual([name for name, text in published_text() if any(word in text.lower() for word in words)], [])
 
 
 if __name__ == '__main__':
