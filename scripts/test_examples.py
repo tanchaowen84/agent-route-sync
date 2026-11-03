@@ -108,6 +108,34 @@ class TemplateTests(unittest.TestCase):
         self.assertEqual(config['dns']['rules'][1], {'rule_set': ['sr-private'], 'server': 'dns-local'})
 
 
+class AgentGuidanceTests(unittest.TestCase):
+    def test_update_reminder_survives_in_prompt_flow_and_report(self):
+        readme = (ROOT / 'README.md').read_text(encoding='utf-8')
+        begin = readme.index('请帮我接入 AgentRoute')
+        prompt = readme[begin:readme.index('```', begin)]
+        flow = (ROOT / 'AGENTS.md').read_text(encoding='utf-8')
+        for text in (prompt, flow):
+            for phrase in ('经常更新', '拉分支', 'VPS', '手动复查'):
+                self.assertIn(phrase, text)
+        self.assertIn('存成本地文件', prompt)
+        self.assertIn('请复查我的 AgentRoute 接入', readme)
+        report = (ROOT / 'docs/DNS-WEBRTC.md').read_text(encoding='utf-8')
+        report = report[report.index('简短交付格式'):]
+        for phrase in ('后续更新', '文档提交 SHA', '接入范围'):
+            self.assertIn(phrase, report)
+
+    def test_issue_form_is_well_formed_and_warns_about_secrets(self):
+        form = yaml.safe_load((ROOT / '.github/ISSUE_TEMPLATE/agent-report.yml').read_text(encoding='utf-8'))
+        self.assertTrue(form['name'] and form['description'])
+        body = form['body']
+        self.assertEqual(body[0]['type'], 'markdown')
+        self.assertIn('订阅', body[0]['attributes']['value'])
+        fields = [item for item in body if item['type'] != 'markdown']
+        self.assertEqual(len({item['id'] for item in fields}), len(fields))
+        self.assertTrue(all(item['attributes']['label'] for item in fields))
+        self.assertTrue(any(item.get('validations', {}).get('required') for item in fields))
+
+
 class PublishedTextTests(unittest.TestCase):
     def test_published_text_has_no_internal_wording(self):
         names = dict(published_text())

@@ -2,7 +2,7 @@
 # Merge the keys below into the existing profile; never replace the whole file.
 # Keep the user's proxies, proxy-providers, proxy-groups, ports, tun and secret.
 # Replace every PROXY (including the #PROXY suffix of DNS URLs) with the real main group.
-# When the profile comes from a subscription, read "Where changes survive" in docs/CLIENTS.md first.
+# When the profile comes from a subscription, read the persistence section of docs/CLIENTS.md first.
 ipv6: true
 profile:
   store-selected: true
@@ -62,6 +62,7 @@ dns:
     - https://1.1.1.1/dns-query#PROXY
     - https://1.0.0.1/dns-query#PROXY
   nameserver-policy:
+    # "system" follows the OS resolver, which a client may rewrite to a public address.
     rule-set:sr-private: [system]
     rule-set:sr-proxy:
       - https://1.1.1.1/dns-query#PROXY

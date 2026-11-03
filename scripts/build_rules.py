@@ -8,14 +8,29 @@ import os
 from pathlib import Path
 import re
 import time
+import urllib.error
 import urllib.request
-from public_formats import LOCAL, export
+from public_formats import BASE_URL, LOCAL, export
 
 ROOT = Path(__file__).resolve().parents[1]
 REGISTRY = json.loads((ROOT / 'sources.json').read_text(encoding='utf-8'))
 SOURCES = {key: 'https://raw.githubusercontent.com/' + value['repository'] + '/' + value['ref'] + '/' + value['path'] for key, value in REGISTRY['inputs'].items()}
 
 DOMAIN = re.compile(r'^[-_a-zA-Z0-9]+(?:\.[-_a-zA-Z0-9]+)*$')
+# Blocking these, or calling them internal, would lock clients out of rule refresh,
+# encrypted DNS or signing in.
+MUST_STAY_REACHABLE = ('raw.githubusercontent.com', 'github.com', 'api.github.com', 'www.google.com', 'accounts.google.com',
+                       'www.apple.com', 'icloud.com', 'login.microsoftonline.com', 'cloudflare-dns.com', 'dns.google',
+                       'challenges.cloudflare.com', 'www.recaptcha.net', 'claude.ai', 'claude.com', 'anthropic.com',
+                       'api.anthropic.com', 'chatgpt.com', 'openai.com', 'api.openai.com', 'gemini.google.com')
+# A DIRECT route to these fails or shows the user's real address to the service.
+MUST_NOT_BE_DIRECT = ('raw.githubusercontent.com', 'www.google.com', 'www.gstatic.com', 'www.wikipedia.org', 'api.github.com',
+                      'claude.ai', 'claude.com', 'anthropic.com', 'api.anthropic.com', 'chatgpt.com', 'openai.com',
+                      'api.openai.com', 'gemini.google.com')
+# Upstream lists move by well under 1% a day, so a large drop means damage rather than news.
+MAX_SHRINK = 0.3
+# The China IP source updates about weekly; two quiet weeks means someone should look.
+UPSTREAM_STALE_DAYS = 14
 
 
 def fetch(url):
@@ -99,9 +114,7 @@ def advertising_domains(text):
             pass
         else:
             raise ValueError('advertising_ip_forbidden')
-    for host in ('www.baidu.com', 'www.qq.com', 'login.weixin.qq.com', 'www.taobao.com', 'www.jd.com',
-                 'www.google.com', 'api.github.com', 'www.apple.com', 'login.microsoftonline.com',
-                 'claude.ai', 'anthropic.com', 'claude.com'):
+    for host in ('www.baidu.com', 'www.qq.com', 'login.weixin.qq.com', 'www.taobao.com', 'www.jd.com') + MUST_STAY_REACHABLE:
         if matches(host, exact, suffix):
             raise ValueError('advertising_blocks_protected_site')
     if not matches('ad.doubleclick.net', exact, suffix):
@@ -117,8 +130,7 @@ def private_domains(text):
     for name in exact | suffix:
         if ('.' not in name and name not in local_tlds) or name in {'com.cn', 'net.cn', 'org.cn', 'co.uk', 'com.au', 'co.jp'}:
             raise ValueError('private_domain_too_broad')
-    for host in ('www.google.com', 'api.github.com', 'www.apple.com', 'icloud.com',
-                 'claude.ai', 'anthropic.com', 'claude.com'):
+    for host in MUST_STAY_REACHABLE:
         if matches(host, exact, suffix):
             raise ValueError('private_overrides_public_service')
     return exact, suffix
@@ -132,11 +144,12 @@ def build(raw, output, versions=None):
     foreign_exact, foreign_suffix = domains(raw['foreign_domains'])
     if len(foreign_exact) + len(foreign_suffix) <= 1000:
         raise ValueError('foreign_domain_dataset_empty_or_truncated')
+    if not all(matches(domain, foreign_exact, foreign_suffix) for domain in ('www.google.com', 'github.com')):
+        raise ValueError('foreign_domain_coverage_lost')
     before_domain_count = len(exact) + len(suffix)
     exact, suffix = exclude_foreign(exact, suffix, foreign_exact, foreign_suffix)
     excluded_count = before_domain_count - len(exact) - len(suffix)
-    if any(matches(domain, exact, suffix) for domain in
-           ('www.gstatic.com', 'www.google.com', 'www.wikipedia.org', 'api.github.com')):
+    if any(matches(domain, exact, suffix) for domain in MUST_NOT_BE_DIRECT):
         raise ValueError('foreign_domain_would_be_direct')
     if not all(matches(domain, exact, suffix) for domain in
                ('www.baidu.com', 'www.qq.com', 'www.taobao.com', 'www.jd.com')):
@@ -220,20 +233,55 @@ def build(raw, output, versions=None):
     return manifest
 
 
-def main():
+def dataset_sizes(index):
+    return {item['id']: item['resources']['surge']['entries'] for item in index['datasets']}
+
+
+def refuse_large_shrink(previous, current):
+    """A dataset that lost this much is damaged upstream, so keep serving the last good one."""
+    sizes = dataset_sizes(current)
+    for name, count in dataset_sizes(previous).items():
+        if sizes.get(name, 0) < count * (1 - MAX_SHRINK):
+            raise ValueError('dataset_shrank_too_much:' + name)
+
+
+def published_index():
+    """The index clients read now, or None before the first publication."""
+    try:
+        return json.loads(fetch(BASE_URL + 'index.json'))
+    except urllib.error.HTTPError as error:
+        if error.code == 404:
+            return None
+        raise
+
+
+def stale_repositories(versions, now):
+    limit = now - datetime.timedelta(days=UPSTREAM_STALE_DAYS)
+    return sorted({entry['repository'] for entry in versions.values()
+                   if datetime.datetime.fromisoformat(entry['committed_at'].replace('Z', '+00:00')) < limit})
+
+
+def main(output=Path('generated')):
     heads, raw, versions = {}, {}, {}
     for key, entry in REGISTRY['inputs'].items():
         repo, ref = entry['repository'], entry['ref']
         if (repo, ref) not in heads:
-            sha = json.loads(fetch('https://api.github.com/repos/' + repo + '/commits/' + ref))['sha']
-            if not re.fullmatch(r'[a-f0-9]{40}', sha): raise ValueError('invalid_upstream_sha')
-            heads[repo, ref] = sha
-        sha = heads[repo, ref]
+            head = json.loads(fetch('https://api.github.com/repos/' + repo + '/commits/' + ref))
+            if not re.fullmatch(r'[a-f0-9]{40}', head['sha']): raise ValueError('invalid_upstream_sha')
+            heads[repo, ref] = head['sha'], head['commit']['committer']['date']
+        sha, committed_at = heads[repo, ref]
         url = 'https://raw.githubusercontent.com/' + repo + '/' + sha + '/' + entry['path']
         raw[key] = fetch(url)
-        versions[key] = {'repository': repo, 'commit': sha, 'path': entry['path'], 'url': url}
-    manifest = build(raw, Path('generated'), versions)
-    print(json.dumps(manifest['counts']))
+        versions[key] = {'repository': repo, 'commit': sha, 'committed_at': committed_at, 'path': entry['path'], 'url': url}
+    manifest = build(raw, output, versions)
+    previous = published_index()
+    if previous and os.environ.get('AGENTROUTE_ALLOW_SHRINK') != 'true':
+        refuse_large_shrink(previous, json.loads((output / 'index.json').read_text(encoding='utf-8')))
+    stale = stale_repositories(versions, datetime.datetime.now(datetime.timezone.utc))
+    if stale and os.environ.get('GITHUB_OUTPUT'):
+        with open(os.environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as stream:
+            stream.write('stale_upstreams=' + ','.join(stale) + '\n')
+    print(json.dumps({**manifest['counts'], 'stale_upstreams': stale}))
 
 
 if __name__ == '__main__':

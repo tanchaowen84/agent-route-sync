@@ -17,7 +17,14 @@ for entry in REGISTRY['inputs'].values():
 notice=(root/'NOTICE.md').read_text(encoding='utf-8')
 for project in REGISTRY['projects']:
     if project['url'] not in notice:raise ValueError('notice_source_missing')
-for p in [root/'README.md',root/'AGENTS.md',*list((root/'docs').glob('*.md'))]:
+def anchors(p):
+    text=p.read_text(encoding='utf-8')
+    return set(re.findall(r'<a id="([^"]+)"',text))|{re.sub(r'[^\w\- ]','',h).strip().lower().replace(' ','-') for h in re.findall(r'^#+\s+(.+)$',text,re.M)}
+for p in [root/'README.md',root/'AGENTS.md',*list((root/'docs').glob('*.md')),root/'examples/README.md']:
     for link in re.findall(r'\]\(([^)]+)\)',p.read_text(encoding='utf-8')):
-        if '://' not in link and not link.startswith('#') and not (p.parent/link.split('#')[0]).exists():raise ValueError('missing_doc_link:'+link)
+        if '://' in link:continue
+        path,_,anchor=link.partition('#')
+        target=p.parent/path if path else p
+        if not target.exists():raise ValueError('missing_doc_link:'+link)
+        if anchor and anchor not in anchors(target):raise ValueError('missing_doc_anchor:'+link)
 print(json.dumps({'schemas':2,'sources':len(REGISTRY['projects']),'documentation_links':'passed'}))

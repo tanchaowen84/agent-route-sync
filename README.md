@@ -1,13 +1,13 @@
 # AgentRoute · 智能体分流规则
 
-[![自动构建](https://github.com/ryuu-restart/agent-route/actions/workflows/run.yml/badge.svg)](https://github.com/ryuu-restart/agent-route/actions/workflows/run.yml)
+[![自动构建](https://github.com/ryuu-restart/agent-route/actions/workflows/run.yml/badge.svg)](https://github.com/ryuu-restart/agent-route/actions/workflows/run.yml) [![规则更新](https://img.shields.io/github/last-commit/ryuu-restart/agent-route/release?label=%E8%A7%84%E5%88%99%E6%9B%B4%E6%96%B0)](https://github.com/ryuu-restart/agent-route/commits/release)
 
 **自动更新分流规则，用你自己的节点，让你的 Agent 处理规则、DNS 和 WebRTC，并逐项验证。**
 
 [复制提示词](#agent-prompt) · [Agent 执行流程](AGENTS.md) · [DNS / WebRTC 验收](docs/DNS-WEBRTC.md)
 
 > [!IMPORTANT]
-> 推荐使用 ChatGPT 6.1 Sol Xhigh 或更高智能水平的 Agent 来操作。接入需要读取资料、操作目标设备并验证结果；碰不到设备的聊天工具只能提供指导。
+> 需要能读取文档、操作目标设备并联网查资料的 Agent，例如 Codex、Claude Code，并选择它当前能力最强的模型。碰不到设备的聊天工具只能提供指导。
 
 <a id="about"></a>
 
@@ -19,13 +19,13 @@ AgentRoute 整理国内、海外、内网、广告域名和中国 IP 名单，�
 
 <img src="assets/rules-overview.jpg" width="760" alt="AgentRoute 规则概览：内网、广告、海外、国内域名与中国 IP 兜底。数量为示意。">
 
-*规则数量以[最新发布清单](https://raw.githubusercontent.com/ryuu-restart/agent-route/release/manifest.json)为准。*
+*规则数量以[发布索引](https://raw.githubusercontent.com/ryuu-restart/agent-route/release/index.json)的 `entries` 为准。*
 
 <a id="agent-prompt"></a>
 
 ## 复制给自己的 Agent
 
-准备好自己的节点和代理客户端，再复制下面整段。接入要求 TUN 或经核实的等效系统隧道；尚未启用时，Agent 会先指导你开启和确认。
+准备好自己的节点和代理客户端，再复制下面整段。电脑和手机上要求 TUN 或经核实的等效系统隧道，尚未启用时 Agent 会先指导你开启和确认。服务器、规则分发，或你明确只想接规则时，Agent 会按对应范围处理并如实报告。
 
 ```text
 请帮我接入 AgentRoute，处理规则、DNS 和 WebRTC，并逐项验证：
@@ -38,10 +38,28 @@ https://raw.githubusercontent.com/ryuu-restart/agent-route/master/docs/DNS-WEBRT
 
 识别我的实际环境和版本，查询对应的官方资料完成适配，不必照搬模板或安装示例中的版本。先检查，已符合目标的配置保留；需要修改时先备份并给我可独立操作的恢复方法。保留我的节点、订阅和用户例外，不中断现用代理来做对照。碰不到设备或需要我操作时，给出具体下一步。
 
-最后分别报告规则、DNS、WebRTC 的通过/失败/未验证/不适用，以及改动、恢复方法和剩余问题，不把配置检查成功当作真实验收通过。
+最后分别报告规则、DNS、WebRTC 的通过/失败/未验证/不适用，以及改动、恢复方法和剩余问题，不把配置检查成功当作真实验收通过。把报告和恢复方法存成本地文件，告诉我路径。
+
+然后提醒我：这个项目会持续更新，要经常更新，不要用一次就不管。按我的环境问我想怎么跟进：拉分支自动同步、部署到 VPS 定期拉取，还是定期手动复查。除非我要求，否则不要替我搭建。
+
+如果发现这个项目的文档、模板或规则有问题，替我写好脱敏的 Issue 草稿，由我决定是否提交。
 ```
 
-规则名单通常由客户端自动刷新；模板和说明的变化要持续跟进[提交记录](https://github.com/ryuu-restart/agent-route/commits/master)。自动或手动跟进方式由使用者决定。
+**改完上不了网：** 先按 Agent 留下的恢复文件操作。手边没有时，关掉代理客户端的 TUN 和系统代理，网络一般就能回来。
+
+## 记得经常更新
+
+这个项目会持续更新，不要用一次就不管。规则名单通常由客户端自动刷新，但模板和说明的变化不会自动到你的设备，可以看[提交记录](https://github.com/ryuu-restart/agent-route/commits/master)。
+
+怎么跟进由你决定，让你的 Agent 按你的环境来做：拉分支自动同步、部署到 VPS 定期拉取，或者定期手动复查。手动复查时，把这段发给 Agent：
+
+```text
+请复查我的 AgentRoute 接入：读取 https://github.com/ryuu-restart/agent-route 的最新文档，对比我上次报告（默认在 ~/AgentRoute/）记录的文档版本，只处理有变化且适用于我的部分，再按验收表复测规则、DNS、WebRTC，最后更新报告。
+```
+
+## 反馈问题
+
+接入时遇到问题请提 [Issue](https://github.com/ryuu-restart/agent-route/issues/new/choose)。Agent 的报告脱敏后可以直接贴进去，不要附节点、订阅、完整配置或真实 IP。
 
 ## 资料与来源
 

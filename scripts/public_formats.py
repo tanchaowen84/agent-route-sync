@@ -92,7 +92,7 @@ def export(output, domain_groups, networks, generated_at):
         'agent_guide_url': 'https://raw.githubusercontent.com/ryuu-restart/agent-route/master/AGENTS.md',
         'privacy_guide_url': 'https://github.com/ryuu-restart/agent-route/blob/master/docs/DNS-WEBRTC.md',
         'update_interval_seconds': 86400, 'max_source_age_seconds': 172800,
-        'order': ['user-and-node-exceptions', 'lan', *DATASETS, 'final-proxy'],
+        'order': ['user-and-node-exceptions', 'lan', 'dns-server-paths', *DATASETS, 'final-proxy'],
         'datasets': entries,
         'helpers': [{'id': 'non-cn-ip', 'purpose': 'sing-box DNS answer filter only; not a routing dataset',
                      'path': helper, 'url': BASE_URL + helper, 'sha256': files[helper], 'entries': len(outside)}],
