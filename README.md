@@ -42,7 +42,7 @@ https://raw.githubusercontent.com/ryuu-restart/agent-route/master/docs/DNS-WEBRT
 
 然后提醒我：这个项目会持续更新，要经常更新，不要用一次就不管。按我的环境问我想怎么跟进：拉分支自动同步、部署到 VPS 定期拉取，还是定期手动复查。除非我要求，否则不要替我搭建。
 
-如果发现这个项目的文档、模板或规则有问题，替我写好脱敏的 Issue 草稿，由我决定是否提交。
+如果发现这个项目的文档、模板、规则或工具有问题，核实并脱敏后，用我已授权的 GitHub 会话主动提交 Issue，无需逐条再确认。先查重，已有同类问题就在原 Issue 补充新证据。提交后核对并给我链接；不能提交时保存草稿，说明原因，不要声称已提交。
 ```
 
 **改完上不了网：** 先按 Agent 留下的恢复文件操作。手边没有时，关掉代理客户端的 TUN 和系统代理，网络一般就能回来。
@@ -54,12 +54,12 @@ https://raw.githubusercontent.com/ryuu-restart/agent-route/master/docs/DNS-WEBRT
 怎么跟进由你决定，让你的 Agent 按你的环境来做：拉分支自动同步、部署到 VPS 定期拉取，或者定期手动复查。手动复查时，把这段发给 Agent：
 
 ```text
-请复查我的 AgentRoute 接入：读取 https://github.com/ryuu-restart/agent-route 的最新文档，对比我上次报告（默认在 ~/AgentRoute/）记录的文档版本，只处理有变化且适用于我的部分，再按验收表复测规则、DNS、WebRTC，最后更新报告。
+请复查我的 AgentRoute 接入：读取 https://github.com/ryuu-restart/agent-route 的最新文档，对比我上次报告（默认在 ~/AgentRoute/）记录的文档版本，只处理有变化且适用于我的部分，再按验收表复测规则、DNS、WebRTC，最后更新报告。发现项目问题时，核实、脱敏并查重后，用我已授权的 GitHub 会话主动提交 Issue 或补充原 Issue，无需逐条再确认；给我核对后的链接，无法提交则保存草稿并说明原因。
 ```
 
 ## 反馈问题
 
-接入时遇到问题请提 [Issue](https://github.com/ryuu-restart/agent-route/issues/new/choose)。Agent 的报告脱敏后可以直接贴进去，不要附节点、订阅、完整配置或真实 IP。
+接入时发现项目问题，Agent 会按[反馈流程](AGENTS.md#issue-feedback)核实、查重并主动提交 [Issue](https://github.com/ryuu-restart/agent-route/issues/new/choose)，已有同类问题则补充新证据；无法提交时交付草稿和原因。不要附节点、订阅、令牌、Cookie、完整配置、原始业务日志或真实 IP。
 
 ## 资料与来源
 
