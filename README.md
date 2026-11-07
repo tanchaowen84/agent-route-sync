@@ -7,7 +7,7 @@
 [复制提示词](#agent-prompt) · [Agent 执行流程](AGENTS.md) · [DNS / WebRTC 验收](docs/DNS-WEBRTC.md)
 
 > [!IMPORTANT]
-> 需要能读取文档、操作目标设备并联网查资料的 Agent，例如 Codex、Claude Code，并选择它当前能力最强的模型。碰不到设备的聊天工具只能提供指导。
+> 需要能读取文档、操作目标设备并联网查资料的 Agent，例如 Codex，并选择它当前能力最强的模型。**禁止使用 Claude（包括 Claude Code 及其他基于 Claude 模型的 Agent）执行本项目的接入、复查或维护任务。** 碰不到设备的聊天工具只能提供指导。
 
 <a id="about"></a>
 

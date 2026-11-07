@@ -7,6 +7,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+import urllib.error
 from datetime import datetime, timezone, timedelta
 from sync_rules import operate, selected, locked, main, validate_manifest, get, HELPER
 from unittest.mock import patch, MagicMock
@@ -165,5 +166,75 @@ class SyncTests(unittest.TestCase):
         code="from build_rules import domains; domains('not a domain')"
         p=subprocess.run([sys.executable,'-O','-B','-c',code],cwd=Path(__file__).parent,capture_output=True)
         self.assertNotEqual(p.returncode,0)
+
+    def test_explicit_release_sha_avoids_api_and_downloads_one_generation(self):
+        urls = []
+        def raw_only(url):
+            urls.append(url)
+            if 'api.github.com' in url:
+                raise urllib.error.HTTPError(url, 403, 'rate limit exceeded', None, None)
+            return self.fetch(url)
+        result = operate('sync', self.root, 'mihomo', fetch=raw_only, release_sha=self.sha)
+        self.assertEqual(result['status'], 'updated')
+        self.assertEqual(result['generation'], self.sha + '-mihomo')
+        self.assertTrue(all('/' + self.sha + '/' in url for url in urls))
+        self.assertEqual(operate('verify', self.root)['status'], 'verified')
+
+    def test_explicit_release_sha_keeps_validation_and_failure_preservation(self):
+        for existing in (False, True):
+            for bad, age in (('hash', 0), ('path', 0), ('offline', 0), ('interrupt', 0), (None, 49), (None, -1)):
+                with self.subTest(existing=existing, bad=bad, age=age), tempfile.TemporaryDirectory() as folder:
+                    root = Path(folder) / 'cache'
+                    self.bad = None; self.age = 0; self.sha = 'a' * 40
+                    if existing:
+                        operate('sync', root, fetch=self.fetch)
+                    pointer = root / 'current.json'
+                    before = pointer.read_bytes() if pointer.exists() else None
+                    self.sha = 'b' * 40; self.bad = bad; self.age = age
+                    with self.assertRaises((ValueError, OSError, KeyboardInterrupt)):
+                        operate('sync', root, fetch=self.fetch, release_sha=self.sha)
+                    self.assertEqual(pointer.read_bytes() if pointer.exists() else None, before)
+
+    def test_explicit_release_sha_rejects_invalid_input_before_io(self):
+        fetch = MagicMock()
+        for sha in ('', 'a' * 39, 'a' * 41, 'g' * 40, '../release', 'A' * 40, 123):
+            with self.subTest(sha=sha), self.assertRaisesRegex(ValueError, 'invalid_release_sha'):
+                operate('sync', self.root, fetch=fetch, release_sha=sha)
+        for command in ('verify', 'status', 'rollback'):
+            with self.subTest(command=command), self.assertRaisesRegex(ValueError, 'release_sha_requires_sync'):
+                operate(command, self.root, fetch=fetch, release_sha=self.sha)
+        fetch.assert_not_called()
+        self.assertFalse(self.root.exists())
+
+    def test_explicit_release_sha_respects_rollback_hold(self):
+        self.sync(); self.sha = 'b' * 40; self.sync()
+        operate('rollback', self.root)
+        result = operate('sync', self.root, fetch=self.fetch, release_sha=self.sha)
+        self.assertEqual(result['status'], 'held')
+        self.assertEqual(result['generation'], 'a' * 40 + '-all')
+
+    def test_cli_forwards_optional_release_sha(self):
+        real_operate = operate
+        def offline(command, root, fmt, **kwargs):
+            return real_operate(command, root, fmt, fetch=self.fetch, **kwargs)
+        out = MagicMock()
+        args = ['sync_rules.py', 'sync', '--output', str(self.root), '--format', 'mihomo', '--release-sha', self.sha]
+        with patch('sync_rules.operate', side_effect=offline), patch.object(sys, 'argv', args), patch('builtins.print', out):
+            self.assertEqual(main(), 0)
+        self.assertEqual(json.loads(out.call_args[0][0])['generation'], self.sha + '-mihomo')
+
+    def test_default_api_rate_limit_preserves_existing_or_empty_cache(self):
+        def limited(url):
+            raise urllib.error.HTTPError(url, 403, 'rate limit exceeded', None, None)
+        for existing in (False, True):
+            with self.subTest(existing=existing), tempfile.TemporaryDirectory() as folder:
+                root = Path(folder) / 'cache'
+                if existing:
+                    operate('sync', root, fetch=self.fetch)
+                pointer = root / 'current.json'
+                before = pointer.read_bytes() if pointer.exists() else None
+                with self.assertRaises(urllib.error.HTTPError):
+                    operate('sync', root, fetch=limited)
+                self.assertEqual(pointer.read_bytes() if pointer.exists() else None, before)
 
 if __name__=='__main__':unittest.main()
