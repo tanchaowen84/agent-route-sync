@@ -138,6 +138,130 @@ def resolver_tag(value):
     return value if isinstance(value, str) else value['server']
 
 
+def comment_before(name, needle):
+    """The comment lines directly above the first line that contains needle."""
+    lines = (FULL / name).read_text(encoding='utf-8').splitlines()
+    index, comment = next(i for i, line in enumerate(lines) if needle in line), []
+    while index > 0 and lines[index - 1].lstrip().startswith('#'):
+        index -= 1
+        comment.insert(0, lines[index])
+    return '\n'.join(comment)
+
+
+# Documentation ranges stand in for cn-ip, so the China-IP fallback is judged by structure,
+# not by whatever today's published data happens to contain.
+CHINA = tuple(map(ipaddress.ip_network, ('203.0.113.0/24', '2001:db8:cc::/48')))
+CN_A, CN_AAAA, OTHER_A, OTHER_AAAA = map(ipaddress.ip_address, (
+    '203.0.113.10', '2001:db8:cc::10', '198.51.100.10', '2001:db8:ff::10'))
+# Answers for a domain in no list, in the order the resolver returns them.
+ANSWERS = {'China A': [CN_A], 'China A + AAAA': [CN_A, CN_AAAA], 'other A + AAAA': [OTHER_A, OTHER_AAAA],
+           'China A + other AAAA': [CN_A, OTHER_AAAA], 'other A + China AAAA': [OTHER_A, CN_AAAA],
+           'China A + other A': [CN_A, OTHER_A], 'other A + China A': [OTHER_A, CN_A]}
+UNLISTED = 'unlisted.example'
+
+
+def in_china(address):
+    return any(address.version == network.version and address in network for network in CHINA)
+
+
+def ip_rule_holds(kind, value, address):
+    return any(address.version == network.version and address in network
+               for network in ([ipaddress.ip_network(value)] if kind.startswith('IP-CIDR') else CHINA))
+
+
+def mihomo_outbounds(config, answers=(), literal=None):
+    """Mihomo v1.19.33 for an unlisted domain over FakeIP (its address is cleared, tunnel.go
+    preHandleMetadata), or for a connection to an IP literal. The first IP rule without
+    no-resolve resolves one address, any IPv4 before IPv6 (resolver.go ResolveIPWithResolver),
+    and IP rule sets test only that address. Returns what every possible pick reaches."""
+    ip_sets = {name for name, provider in config['rule-providers'].items() if provider['behavior'] == 'ipcidr'}
+    outcomes = set()
+    for pick in [literal] if literal else [a for a in answers if a.version == 4] or list(answers):
+        address = literal
+        for rule in config['rules']:
+            kind, value, *rest = rule.split(',')
+            if kind == 'MATCH':
+                outcomes.add(value)
+                break
+            if kind in ('DOMAIN', 'DOMAIN-SUFFIX'):
+                if not literal and (UNLISTED == value or kind == 'DOMAIN-SUFFIX' and UNLISTED.endswith('.' + value)):
+                    outcomes.add(rest[0])
+                    break
+                continue
+            if kind == 'RULE-SET' and value not in ip_sets:
+                continue  # a domain list holds no unlisted name and never resolves
+            if address is None and 'no-resolve' not in rest[1:]:
+                address = pick
+            if address is not None and ip_rule_holds(kind, value, address):
+                outcomes.add(rest[0])
+                break
+    return outcomes
+
+
+def surge_outbounds(rules, answers=(), literal=None):
+    """Surge's documented evaluation (manual.nssurge.com/rules/ip.html): the first IP rule
+    without no-resolve triggers one lookup; IP-CIDR tests the first IPv4 record and IP-CIDR6
+    the first IPv6 one. A RULE-SET line's no-resolve covers every rule in the set."""
+    first = {version: next((a for a in answers if a.version == version), None) for version in (4, 6)}
+    resolved = literal is not None
+    for rule in rules:
+        if rule.startswith('AND,'):
+            continue  # guarded by HOSTNAME-TYPE IPv4 / IPv6, so a domain hostname never matches
+        kind, value, policy, *options = rule.split(',') + ['']
+        if kind == 'FINAL':
+            return {value}
+        if kind in ('DOMAIN', 'DOMAIN-SUFFIX') or kind == 'RULE-SET' and not value.endswith('/cn-ip.list'):
+            continue  # the hostname is in no domain list
+        if not resolved and 'no-resolve' in options:
+            continue
+        resolved = True
+        if literal is not None:
+            candidates = [literal]
+        elif kind == 'RULE-SET':
+            candidates = [a for a in first.values() if a]  # its IP-CIDR and IP-CIDR6 rules
+        else:
+            record = first[6 if kind == 'IP-CIDR6' else 4]
+            candidates = [record] if record else []
+        if any(ip_rule_holds(kind, value, a) for a in candidates):
+            return {policy}
+    return set()
+
+
+def sing_box_outbounds(config, answers=(), literal=None):
+    """sing-box 1.14.4: dns.rules for an A/AAAA lookup of an unlisted name, where IP sets under
+    match_response hold when any answer is inside (route/rule/rule_item_cidr.go). A FakeIP answer
+    returns the name to the router, where IP rules cannot match it; real answers can each be dialled."""
+    servers = {server['tag']: server for server in config['dns']['servers']}
+    holds = {'sr-cn-ip': in_china, 'sr-non-cn-ip': lambda address: not in_china(address)}
+    real, response = True, None
+    for rule in [] if literal else config['dns']['rules']:
+        if rule.get('match_response'):
+            if response is None or not any(holds[s](a) for s in rule['rule_set'] for a in response):
+                continue
+        elif set(rule) & DOMAIN_MATCHERS:
+            continue
+        if rule.get('action', 'route') == 'evaluate':
+            response = answers
+            continue
+        real = rule.get('action') == 'respond' or servers[rule['server']]['type'] != 'fakeip'
+        break
+    if not real:
+        return {config['route']['final']}
+    outcomes = set()
+    for address in [literal] if literal else answers:
+        for rule in config['route']['rules']:
+            if rule.get('action') not in ('route', 'reject') or set(rule) - {'ip_cidr', 'rule_set', 'action', 'outbound'}:
+                continue
+            if any(address in ipaddress.ip_network(n) for n in rule.get('ip_cidr', ())
+                   if ipaddress.ip_network(n).version == address.version) \
+                    or any(holds.get(s, lambda _: False)(address) for s in rule.get('rule_set', ())):
+                outcomes.add('REJECT' if rule['action'] == 'reject' else rule['outbound'])
+                break
+        else:
+            outcomes.add(config['route']['final'])
+    return outcomes
+
+
 class TemplateTests(unittest.TestCase):
     def assert_order(self, rules, marker):
         positions = [position(rules, marker(dataset)) for dataset in DATASETS]
@@ -153,7 +277,6 @@ class TemplateTests(unittest.TestCase):
                 self.assert_order(rules, lambda d: 'RULE-SET,' + BASE_URL + 'surge/' + d + '.list,')
                 self.assertRegex(rules[position(rules, '223.5.5.5/32')], ',DIRECT,no-resolve$')
                 self.assertRegex(rules[position(rules, '1.1.1.1/32')], ',PROXY,no-resolve$')
-                self.assertNotIn('no-resolve', rules[position(rules, 'surge/cn-ip.list')])
                 self.assertTrue(rules[-1].startswith('FINAL,PROXY'))
                 self.assertEqual(sum(rule.startswith('FINAL') for rule in rules), 1)
 
@@ -170,6 +293,8 @@ class TemplateTests(unittest.TestCase):
             self.assertNotIn('#proxy', general[key], key)
             self.assertIn('223.5.5.5', general[key], key)
         self.assertNotIn('bypass-system', general)
+        # Direct DNS falls back to this shared resolver, so its domestic gap must stay stated.
+        self.assertIn('direct-dns-server', comment_before('shadowrocket.conf', 'fallback-dns-server ='))
         host = text[text.index('[Host]'):]
         for name in ('*.lan', '*.local', '*.home.arpa'):
             self.assertIn(name + ' = server:system', host)
@@ -179,7 +304,6 @@ class TemplateTests(unittest.TestCase):
         rules = config['rules']
         self.assert_order(rules, lambda d: 'RULE-SET,sr-' + d + ',')
         self.assertEqual(rules[-1], 'MATCH,PROXY')
-        self.assertNotIn('no-resolve', rules[position(rules, 'sr-cn-ip')])
         self.assertEqual(rules, rules_of('mihomo.yaml'))
         for provider, dataset in zip(('sr-' + d for d in DATASETS), DATASETS):
             self.assertEqual(config['rule-providers'][provider]['url'], BASE_URL + 'mihomo/' + dataset + '.yaml')
@@ -256,6 +380,28 @@ class TemplateTests(unittest.TestCase):
                 else:
                     self.assertEqual(resolver, expected)
 
+    def test_china_ip_fallback_never_sends_a_mixed_answer_direct(self):
+        # A core that tests one address cannot tell a mixed answer from a China one. DIRECT is
+        # allowed only when every answer is in China; an IP literal must still reach cn-ip.
+        mihomo = yaml.safe_load((FULL / 'mihomo.yaml').read_text(encoding='utf-8'))
+        sing_box = json.loads((FULL / 'sing-box.json').read_text(encoding='utf-8'))
+        evaluate = {'mihomo.yaml': lambda **kw: mihomo_outbounds(mihomo, **kw),
+                    'surge.conf': lambda **kw: surge_outbounds(rules_of('surge.conf'), **kw),
+                    'sing-box.json': lambda **kw: sing_box_outbounds(sing_box, **kw)}
+        for name, outbounds in evaluate.items():
+            for label, answers in ANSWERS.items():
+                with self.subTest(name=name, answers=label):
+                    reached = outbounds(answers=answers)
+                    self.assertTrue(reached)
+                    self.assertTrue(reached <= ({'DIRECT', 'PROXY'} if all(map(in_china, answers)) else {'PROXY'}))
+            for literal, expected in ((CN_A, 'DIRECT'), (CN_AAAA, 'DIRECT'), (OTHER_A, 'PROXY'), (OTHER_AAAA, 'PROXY')):
+                with self.subTest(name=name, literal=str(literal)):
+                    self.assertEqual(outbounds(literal=literal), {expected})
+        # sing-box judges the whole answer in DNS, so it keeps the fallback for China answers.
+        self.assertEqual(sing_box_outbounds(sing_box, answers=ANSWERS['China A + AAAA']), {'DIRECT'})
+        # Shadowrocket documents neither: the template must say so instead of claiming the goal.
+        self.assertIn('Unverified', comment_before('shadowrocket.conf', 'surge/cn-ip.list'))
+
     def test_mihomo_dns_policy_is_independent_of_business_outbound(self):
         dns = yaml.safe_load((FULL / 'mihomo.yaml').read_text(encoding='utf-8'))['dns']
         # A domain absent from all domain lists may route DIRECT after China-IP
@@ -264,6 +410,17 @@ class TemplateTests(unittest.TestCase):
         self.assertEqual(direct or dns['nameserver'], dns['nameserver'])
         if direct:
             self.assertTrue(dns.get('direct-nameserver-follow-policy'))
+
+    def test_templates_keep_the_dns_path_of_user_domain_exceptions(self):
+        # Clearing the direct resolver, or a [Host] map that only lists the project's sets,
+        # silently moves a user's domain-based DIRECT exception to the proxied resolver
+        # unless the merge gives it a DNS entry for the same domains.
+        self.assertIn('nameserver-policy', comment_before('mihomo.yaml', 'direct-nameserver:'))
+        surge = (FULL / 'surge.conf').read_text(encoding='utf-8')
+        host = surge[surge.index('[Host]'):]
+        self.assertIn('domain-based DIRECT rules', host[host.rindex('RULE-SET:'):])
+        readme = (ROOT / 'examples/README.md').read_text(encoding='utf-8')
+        self.assertIn('保留用户例外的解析去向', readme)
 
 
 class AgentGuidanceTests(unittest.TestCase):
