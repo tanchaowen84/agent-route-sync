@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="310" viewBox="0 0 1080 310">
+  <title>AgentRoute 客户端分流图</title>
+  <desc>客户端从规则订阅选择直连、现有代理或拦截。节点来自用户现有配置。</desc>
+  <defs>
+    <pattern id="grid" width="24" height="24" patternUnits="userSpaceOnUse">
+      <path d="M24 0H0V24" fill="none" stroke="#25354a" />
+    </pattern>
+    <clipPath id="frame">
+      <rect width="1080" height="310" rx="20" />
+    </clipPath>
+  </defs>
+  <g clip-path="url(#frame)">
+    <rect width="1080" height="310" fill="#111c2d" />
+    <path d="M376 0H1080V310H376Z" fill="url(#grid)" />
+    <path d="M376 0V310M656 105H1034M656 206H1034" fill="none" stroke="#2b3d54" />
+    <g fill="none" stroke-width="4" stroke-linecap="round">
+      <path d="M376 155H452" stroke="#a8bbd1" />
+      <path d="M452 155C514 155 512 55 574 55H625" stroke="#74dfb9" />
+      <path d="M452 155H625" stroke="#91b6ff" />
+      <path d="M452 155C514 155 512 255 574 255H625" stroke="#f1bd83" stroke-dasharray="7 9" />
+    </g>
+    <circle cx="452" cy="155" r="8" fill="#edf4ff" stroke="#111c2d" stroke-width="3" />
+    <circle cx="629" cy="55" r="7" fill="#74dfb9" />
+    <circle cx="629" cy="155" r="7" fill="#91b6ff" />
+    <path d="M624 250L634 260M634 250L624 260" stroke="#f1bd83" stroke-width="3" stroke-linecap="round" />
+    <g font-family="PingFang SC, Microsoft YaHei, Noto Sans CJK SC, system-ui, sans-serif">
+      <text x="50" y="120" fill="#eff5ff" font-size="49" font-weight="700">客户端分流</text>
+      <text x="53" y="166" fill="#bbcee5" font-size="27">远程规则 · 自动发布</text>
+      <text x="53" y="205" fill="#91b6ff" font-size="24">Claude Code · 桌面端</text>
+      <g font-size="35" font-weight="650">
+        <text x="666" y="67" fill="#74dfb9">直连</text>
+        <text x="666" y="167" fill="#91b6ff">代理</text>
+        <text x="666" y="267" fill="#f1bd83">拦截</text>
+      </g>
+      <g fill="#dae6f5" font-size="27">
+        <text x="766" y="65">国内与内网</text>
+        <text x="766" y="165">海外流量</text>
+        <text x="766" y="265">命中拦截名单</text>
+      </g>
+    </g>
+  </g>
+  <rect x=".5" y=".5" width="1079" height="309" rx="20" fill="none" stroke="#334760" />
+</svg>

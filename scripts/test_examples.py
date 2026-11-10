@@ -12,13 +12,13 @@ from public_formats import BASE_URL, DATASETS, SYNTHETIC
 
 ROOT = Path(__file__).resolve().parents[1]
 FULL = ROOT / 'examples/full'
-TEXT_SUFFIXES = {'.md', '.py', '.json', '.yaml', '.yml', '.conf', '.txt'}
+TEXT_SUFFIXES = {'.md', '.py', '.json', '.yaml', '.yml', '.conf', '.txt', '.svg'}
 
 
 def published_text():
     """Every text file this repository publishes, except upstream licences and this file."""
     top = [path for path in ROOT.iterdir() if path.is_file()]
-    nested = [path for folder in ('.github', 'docs', 'examples', 'schemas', 'scripts')
+    nested = [path for folder in ('.github', 'assets', 'docs', 'examples', 'schemas', 'scripts', 'subscriptions')
               for path in (ROOT / folder).rglob('*') if path.is_file()]
     for path in sorted(top + nested):
         if path.suffix in TEXT_SUFFIXES and path != Path(__file__).resolve():
@@ -424,26 +424,39 @@ class TemplateTests(unittest.TestCase):
 
 
 class AgentGuidanceTests(unittest.TestCase):
-    def test_update_reminder_survives_in_prompt_flow_and_report(self):
+    def test_subscription_links_select_the_correct_native_format(self):
+        master = BASE_URL.replace('/release/', '/master/')
+        clients = {'mihomo': 'mihomo', 'surge': 'surge', 'shadowrocket': 'surge', 'sing-box': 'sing-box'}
         readme = (ROOT / 'README.md').read_text(encoding='utf-8')
-        begin = readme.index('请帮我接入 AgentRoute')
-        prompt = readme[begin:readme.index('```', begin)]
-        flow = (ROOT / 'AGENTS.md').read_text(encoding='utf-8')
-        for text in (prompt, flow):
-            for phrase in ('经常更新', '拉分支', 'VPS', '手动复查'):
-                self.assertIn(phrase, text)
-        self.assertIn('存成本地文件', prompt)
-        self.assertIn('请复查我的 AgentRoute 接入', readme)
-        report = (ROOT / 'docs/DNS-WEBRTC.md').read_text(encoding='utf-8')
-        # Only the report section counts; reference material after it must not satisfy these phrases.
-        start = report.index('## 简短交付格式')
-        end = report.find('\n## ', start + 1)
-        report = report[start:] if end == -1 else report[start:end]
-        for phrase in ('后续更新', '文档提交 SHA', '接入范围'):
-            self.assertIn(phrase, report)
+        adapters = (ROOT / 'docs/CLIENTS.md').read_text(encoding='utf-8')
+        for client, fmt in clients.items():
+            with self.subTest(client=client):
+                path = f'subscriptions/{client}.json'
+                subscription = json.loads((ROOT / path).read_text(encoding='utf-8'))
+                self.assertEqual(subscription, {
+                    'schema_version': 1,
+                    'kind': 'agentroute_rule_subscription',
+                    'client': client,
+                    'format': fmt,
+                    'index_url': BASE_URL + 'index.json',
+                    'adapter_url': 'https://github.com/ryuu-restart/agent-route/blob/master/docs/CLIENTS.md#' + client,
+                    'routing_mode': 'replace',
+                    'final_action': 'PROXY',
+                })
+                self.assertIn(f']({master}{path})', readme)
+                self.assertRegex(adapters, rf'(?im)^### {re.escape(client)}$')
+
+    def test_browser_checks_link_to_the_three_test_pages(self):
+        expected = {'https://browserleaks.com/ip', 'https://browserleaks.com/dns',
+                    'https://browserleaks.com/webrtc'}
+        for name in ('README.md', 'AGENTS.md'):
+            with self.subTest(name=name):
+                text = (ROOT / name).read_text(encoding='utf-8')
+                links = set(re.findall(r'\]\((https://browserleaks\.com/[^)]+)\)', text))
+                self.assertEqual(links, expected)
 
     def test_acceptance_standard_keeps_every_item_and_its_evidence_rule(self):
-        # The acceptance section is the one place that decides a result. An item that loses
+        # The advanced acceptance section defines full-device results. An item that loses
         # its evidence requirement lets a configuration screenshot pass as a verified path.
         text = (ROOT / 'docs/DNS-WEBRTC.md').read_text(encoding='utf-8')
         section = text[text.index('<a id="acceptance"></a>'):text.index('<a id="report"></a>')]

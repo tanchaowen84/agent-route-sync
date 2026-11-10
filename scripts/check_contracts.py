@@ -9,9 +9,23 @@ from test_build_rules import SourceGenerationTests
 
 root=Path(__file__).resolve().parents[1]
 with tempfile.TemporaryDirectory() as folder:
-    output=Path(folder); build(SourceGenerationTests().fixture(),output)
-    for name in ('manifest','index'):
-        jsonschema.Draft202012Validator(json.loads((root/'schemas'/f'{name}.schema.json').read_text()),format_checker=jsonschema.FormatChecker()).validate(json.loads((output/f'{name}.json').read_text()))
+    output = Path(folder)
+    build(SourceGenerationTests().fixture(), output)
+    metadata = {}
+    for name in ('manifest', 'index'):
+        metadata[name] = json.loads((output / f'{name}.json').read_text(encoding='utf-8'))
+        schema = json.loads((root / 'schemas' / f'{name}.schema.json').read_text(encoding='utf-8'))
+        jsonschema.Draft202012Validator(schema, format_checker=jsonschema.FormatChecker()).validate(metadata[name])
+
+index = metadata['index']
+rule_urls = [dataset['resources'][fmt]['url'] for dataset in index['datasets']
+             for fmt in ('mihomo', 'surge', 'sing-box')]
+readme = (root / 'README.md').read_text(encoding='utf-8')
+rule_table = '\n'.join(line for line in readme.splitlines() if line.startswith('|'))
+table_urls = re.findall(r'\]\(([^)]+)\)', rule_table)
+if [url for url in table_urls if url.startswith(index['base_url'])] != rule_urls:
+    raise ValueError('readme_rule_table_does_not_match_index')
+
 for entry in REGISTRY['inputs'].values():
     if entry['repository'] not in {p['id'] for p in REGISTRY['projects']}:raise ValueError('source_not_attributed')
 notice=(root/'NOTICE.md').read_text(encoding='utf-8')
@@ -27,4 +41,5 @@ for p in [root/'README.md',root/'AGENTS.md',*list((root/'docs').glob('*.md')),ro
         target=p.parent/path if path else p
         if not target.exists():raise ValueError('missing_doc_link:'+link)
         if anchor and anchor not in anchors(target):raise ValueError('missing_doc_anchor:'+link)
-print(json.dumps({'schemas':2,'sources':len(REGISTRY['projects']),'documentation_links':'passed'}))
+print(json.dumps({'schemas': 2, 'sources': len(REGISTRY['projects']), 'readme_rule_links': len(rule_urls),
+                  'documentation_links': 'passed'}))

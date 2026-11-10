@@ -1,0 +1,10 @@
+{
+  "schema_version": 1,
+  "kind": "agentroute_rule_subscription",
+  "client": "surge",
+  "format": "surge",
+  "index_url": "https://raw.githubusercontent.com/ryuu-restart/agent-route/release/index.json",
+  "adapter_url": "https://github.com/ryuu-restart/agent-route/blob/master/docs/CLIENTS.md#surge",
+  "routing_mode": "replace",
+  "final_action": "PROXY"
+}
