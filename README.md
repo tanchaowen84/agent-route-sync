@@ -8,7 +8,7 @@ AgentRoute 发布可供各平台代理客户端使用的分流规则和索引。
 
 [![自动构建](https://github.com/ryuu-restart/agent-route/actions/workflows/run.yml/badge.svg)](https://github.com/ryuu-restart/agent-route/actions/workflows/run.yml) [![规则库发布时间](https://img.shields.io/github/last-commit/ryuu-restart/agent-route/release?label=%E8%A7%84%E5%88%99%E5%BA%93%E5%8F%91%E5%B8%83%E6%97%B6%E9%97%B4&color=2d8e76)](https://github.com/ryuu-restart/agent-route/commits/release)
 
-**[规则与订阅](#rule-subscriptions)** · [交给 Agent](#agent-prompt) · [按需检测](#browser-checks)
+**[规则与订阅](#rule-subscriptions)** · [交给 Agent](#agent-prompt) · [浏览器检测](#browser-checks)
 
 ![AgentRoute 规则动作示意。国内与内网规则对应直连，海外规则对应代理，广告规则对应拦截。](assets/routing-map.svg)
 
@@ -44,11 +44,23 @@ AgentRoute 发布可供各平台代理客户端使用的分流规则和索引。
 把下面这段交给负责接入的 Agent。
 
 ```text
-请读取 AgentRoute 的规则索引和接入说明。
+请先读取 AgentRoute 的接入说明和规则索引。
+https://raw.githubusercontent.com/ryuu-restart/agent-route/master/AGENTS.md
 https://raw.githubusercontent.com/ryuu-restart/agent-route/release/index.json
-按我的目标和现用客户端版本选择接入方案。
-使用对应格式的远程规则，保留我的节点和订阅。
-按我的授权操作，说明改动和恢复方法。
+
+按我的目标、授权和现用客户端版本选择对应的远程规则。改动前备份，保留我的节点、订阅和用户例外。
+接入后核对规则加载和实际分流，告诉我改动和恢复方法。
+
+本次接入范围内的每个浏览器都必须完成 WebRTC 防护。请按浏览器版本给我官方安装和配置教程，由我在实际使用的配置档中操作。
+支持 WebRTC Network Limiter 的浏览器，请指导我安装、启用扩展，并在扩展选项中选择 Use my proxy server (if present)，对应 disable_non_proxied_udp。已有扩展的浏览器也要核对并按此设置。
+https://chromewebstore.google.com/detail/webrtc-network-limiter/npeicpdbkakmehahjeeohfdhnlpdklia
+无法安装这款扩展时，请给我该浏览器官方支持的等效配置教程。查不到可核实的做法时，注明该浏览器待配置并说明原因。
+https://github.com/ryuu-restart/agent-route/blob/master/docs/DNS-WEBRTC.md#webrtc-methods
+
+请交付三个检测链接，指导我配置后用同一配置档逐项做 IP、DNS 和 WebRTC 检测。按浏览器核对实际生效的设置和检测结果，未核实的项目注明未验证。
+https://browserleaks.com/ip
+https://browserleaks.com/dns
+https://browserleaks.com/webrtc
 ```
 
 **禁止使用 Claude（包括 Claude Code 及其他基于 Claude 模型的 Agent）执行本项目的接入、复查或维护任务。**
@@ -57,7 +69,11 @@ https://raw.githubusercontent.com/ryuu-restart/agent-route/release/index.json
 
 ## 浏览器检测
 
-用平时上网的浏览器打开 [IP 检测](https://browserleaks.com/ip)、[DNS 检测](https://browserleaks.com/dns)、[WebRTC 检测](https://browserleaks.com/webrtc)。结果只覆盖当前浏览器的本次探测。
+请为每个目标浏览器自行完成 WebRTC 防护。支持 WebRTC Network Limiter 的浏览器，安装并启用扩展，在扩展选项中选择「Use my proxy server (if present)」（`disable_non_proxied_udp`）。[官方扩展](https://chromewebstore.google.com/detail/webrtc-network-limiter/npeicpdbkakmehahjeeohfdhnlpdklia) · [Chrome 安装教程](https://support.google.com/chrome_webstore/answer/2664769?hl=zh-Hans) · [Edge 安装教程](https://support.microsoft.com/zh-cn/edge/add-turn-off-or-remove-extensions-in-microsoft-edge)
+
+其他浏览器按实际版本查阅适用的官方资料，完成可核实的等效配置。[各浏览器官方资料](docs/DNS-WEBRTC.md#webrtc-methods)
+
+配置后用同一配置档打开检测页，并核对常用的音视频功能。结果只覆盖当前浏览器的本次探测。[IP 检测](https://browserleaks.com/ip) · [DNS 检测](https://browserleaks.com/dns) · [WebRTC 检测](https://browserleaks.com/webrtc)
 
 <a id="反馈问题"></a>
 
