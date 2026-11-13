@@ -424,6 +424,12 @@ class TemplateTests(unittest.TestCase):
 
 
 class AgentGuidanceTests(unittest.TestCase):
+    BROWSER_CHECK_LINKS = [
+        ('IP 检测', 'https://ippure.com/'),
+        ('DNS 检测', 'https://ippure.com/DNS-Leak-Detect.html'),
+        ('WebRTC 检测', 'https://ippure.com/Browser-WebRTC-Leak-Detect.html'),
+    ]
+
     def test_subscription_links_select_the_correct_native_format(self):
         master = BASE_URL.replace('/release/', '/master/')
         clients = {'mihomo': 'mihomo', 'surge': 'surge', 'shadowrocket': 'surge', 'sing-box': 'sing-box'}
@@ -446,14 +452,27 @@ class AgentGuidanceTests(unittest.TestCase):
                 self.assertIn(f']({master}{path})', readme)
                 self.assertRegex(adapters, rf'(?im)^### {re.escape(client)}$')
 
+    def test_default_onboarding_replaces_old_business_rules_and_checks_refresh(self):
+        readme = (ROOT / 'README.md').read_text(encoding='utf-8')
+        prompt_section = readme.partition('<a id="agent-prompt"></a>')[2]
+        prompt = prompt_section.partition('```text\n')[2].partition('\n```')[0]
+        guidance = (ROOT / 'AGENTS.md').read_text(encoding='utf-8')
+        for name, text in (('prompt', prompt), ('guidance', guidance)):
+            with self.subTest(name=name):
+                self.assertRegex(text, r'替换[^。\n]*业务分流[^。\n]*兜底')
+                self.assertIn('停用', text)
+                self.assertIn('保留节点订阅', text)
+                self.assertIn('旧业务规则', text)
+                self.assertIn('旧兜底', text)
+                self.assertRegex(text, r'刷新节点订阅后[^。\n]*回读')
+                self.assertIn('覆盖未完成', text)
+
     def test_browser_checks_link_to_the_three_test_pages(self):
-        expected = {'https://browserleaks.com/ip', 'https://browserleaks.com/dns',
-                    'https://browserleaks.com/webrtc'}
         for name in ('README.md', 'AGENTS.md'):
             with self.subTest(name=name):
                 text = (ROOT / name).read_text(encoding='utf-8')
-                links = set(re.findall(r'\]\((https://browserleaks\.com/[^)]+)\)', text))
-                self.assertEqual(links, expected)
+                links = re.findall(r'\[((?:IP|DNS|WebRTC) 检测)\]\(([^)]+)\)', text)
+                self.assertEqual(links, self.BROWSER_CHECK_LINKS)
 
     def test_copied_setup_prompt_includes_browser_follow_up(self):
         readme = (ROOT / 'README.md').read_text(encoding='utf-8')
@@ -461,20 +480,21 @@ class AgentGuidanceTests(unittest.TestCase):
         prompt = prompt_section.partition('```text\n')[2].partition('\n```')[0]
         self.assertIn(BASE_URL.replace('/release/', '/master/') + 'AGENTS.md', prompt)
         self.assertIn(BASE_URL + 'index.json', prompt)
-        self.assertEqual(set(re.findall(r'^https://browserleaks\.com/\S+$', prompt, re.M)), {
-            'https://browserleaks.com/ip', 'https://browserleaks.com/dns', 'https://browserleaks.com/webrtc',
-        })
+        self.assertEqual(
+            re.findall(r'^https://ippure\.com/\S*$', prompt, re.M),
+            [url for _, url in self.BROWSER_CHECK_LINKS],
+        )
         self.assertIn('未验证', prompt)
-        self.assertIn('每个浏览器都必须完成 WebRTC 防护', prompt)
-        self.assertIn('官方安装和配置教程', prompt)
-        self.assertIn('由我在实际使用的配置档中操作', prompt)
+        self.assertIn('本机已安装的所有浏览器', prompt)
+        self.assertIn('缺扩展就从官方商店安装', prompt)
         self.assertIn('WebRTC Network Limiter', prompt)
         self.assertIn('https://chromewebstore.google.com/detail/webrtc-network-limiter/', prompt)
         self.assertIn('disable_non_proxied_udp', prompt)
-        self.assertIn('官方支持的等效配置教程', prompt)
-        self.assertIn('按浏览器核对实际生效的设置和检测结果', prompt)
+        self.assertIn('应用官方支持的等效防护', prompt)
+        self.assertRegex(prompt, r'在每个浏览器实际使用的配置档里[^。\n]*完成 IP、DNS 和 WebRTC 检测')
         guidance = (ROOT / 'AGENTS.md').read_text(encoding='utf-8')
-        self.assertIn('由使用者在实际使用的配置档中操作', guidance)
+        self.assertIn('Agent 从官方商店补装缺失的扩展', guidance)
+        self.assertRegex(guidance, r'Agent 在同一实际使用的配置档[^。\n]*执行 IP、DNS 和 WebRTC 检测')
         self.assertIn('docs/DNS-WEBRTC.md#webrtc-methods', guidance)
 
     def test_acceptance_standard_keeps_every_item_and_its_evidence_rule(self):
