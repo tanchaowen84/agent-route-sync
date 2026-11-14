@@ -6,6 +6,10 @@ import json
 BASE_URL = 'https://raw.githubusercontent.com/ryuu-restart/agent-route/release/'
 DATASETS = ('private', 'reject', 'proxy', 'direct', 'cn-ip')
 FORMATS = {'surge': '.list', 'mihomo': '.yaml', 'sing-box': '.json'}
+# Common probe mitigation, not protocol detection or a complete WebRTC block.
+# Adapted from Niklaus88/Clash-Config; see sources.json and the preserved MIT licence.
+WEBRTC_PORTS = (3478, 5349, *range(19302, 19310))
+WEBRTC_KEYWORDS = ('stun',)
 LOCAL = tuple(map(ipaddress.ip_network, (
     '0.0.0.0/8', '10.0.0.0/8', '100.64.0.0/10', '127.0.0.0/8',
     '169.254.0.0/16', '172.16.0.0/12', '192.168.0.0/16', '224.0.0.0/4',
@@ -49,6 +53,34 @@ def outside_networks(networks):
     return sorted(result, key=lambda n: (n.version, int(n.network_address), n.prefixlen))
 
 
+def export_webrtc_guard(output):
+    lines = ['DST-PORT,' + str(port) for port in WEBRTC_PORTS]
+    lines += ['DOMAIN-KEYWORD,' + word for word in WEBRTC_KEYWORDS]
+    # Separate rules are OR'ed. Putting port and domain_keyword in one rule would
+    # require both, missing IP literals and custom ports with a known hostname.
+    source = {'version': 3, 'rules': [{'port': list(WEBRTC_PORTS)},
+                                       {'domain_keyword': list(WEBRTC_KEYWORDS)}]}
+    contents = {'surge': '\n'.join(lines) + '\n',
+                'mihomo': 'payload:\n' + ''.join('  - ' + json.dumps(line) + '\n' for line in lines),
+                'sing-box': json.dumps(source, separators=(',', ':')) + '\n'}
+    files, resources = {}, {}
+    for fmt, content in contents.items():
+        name = fmt + '/webrtc-guard' + FORMATS[fmt]
+        path = output / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(content.encode('utf-8'))
+        files[name] = hashlib.sha256(path.read_bytes()).hexdigest()
+        resources[fmt] = {'path': name, 'url': BASE_URL + name,
+                          'sha256': files[name], 'entries': len(lines)}
+    return files, {'id': 'webrtc-guard', 'action': 'REJECT', 'mihomo_behavior': 'classical',
+                   'scope': 'common_stun_ports_and_domain_keywords',
+                   'ports': list(WEBRTC_PORTS), 'domain_keywords': list(WEBRTC_KEYWORDS),
+                   'requires': ['traffic_captured_by_client', 'before_business_rules'],
+                   'limitations': ['not_all_webrtc', 'may_affect_calls_and_p2p',
+                                   'ipv6_capture_requires_device_validation'],
+                   'resources': resources}
+
+
 def export(output, domain_groups, networks, generated_at):
     files, entries = {}, []
     for dataset in DATASETS:
@@ -80,6 +112,8 @@ def export(output, domain_groups, networks, generated_at):
                         'action': 'REJECT' if dataset == 'reject' else 'PROXY' if dataset == 'proxy' else 'DIRECT',
                         'mihomo_behavior': 'ipcidr' if dataset == 'cn-ip' else 'domain',
                         'resources': resources})
+    protection_files, protection = export_webrtc_guard(output)
+    files.update(protection_files)
     helper = 'sing-box/non-cn-ip.json'
     outside = list(map(str, outside_networks(public_china_networks(networks))))
     (output / helper).write_bytes((json.dumps({'version': 3, 'rules': [{'ip_cidr': outside}]},
@@ -92,8 +126,9 @@ def export(output, domain_groups, networks, generated_at):
         'agent_guide_url': 'https://raw.githubusercontent.com/ryuu-restart/agent-route/master/AGENTS.md',
         'privacy_guide_url': 'https://github.com/ryuu-restart/agent-route/blob/master/docs/DNS-WEBRTC.md',
         'update_interval_seconds': 86400, 'max_source_age_seconds': 172800,
-        'order': ['user-and-node-exceptions', 'lan', 'dns-server-paths', *DATASETS, 'final-proxy'],
+        'order': ['user-and-node-exceptions', 'lan', 'webrtc-guard', 'dns-server-paths', *DATASETS, 'final-proxy'],
         'datasets': entries,
+        'protections': [protection],
         'helpers': [{'id': 'non-cn-ip', 'purpose': 'sing-box DNS answer filter only; not a routing dataset',
                      'path': helper, 'url': BASE_URL + helper, 'sha256': files[helper], 'entries': len(outside)}],
         'credentials_required': False, 'contains_nodes': False,

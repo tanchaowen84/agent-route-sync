@@ -1,0 +1,47 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="600" height="906" viewBox="0 0 600 906" role="img" aria-labelledby="title desc">
+  <title id="title">AgentRoute：备份接入、规则分流、浏览器验收</title>
+  <desc id="desc">Agent 读取 AGENTS.md 和规则索引，备份后替换旧业务分流与默认兜底，保留节点与订阅。五类业务规则按内网、拦截、代理、直连、中国 IP 的顺序匹配，未匹配走代理；独立 WebRTC 防护优先于业务规则。检查所有浏览器，为支持的配置档自动安装并配置防护，执行 IP、DNS 和 WebRTC 检测，交付恢复方法。</desc>
+  <g font-family="-apple-system,BlinkMacSystemFont,Segoe UI,PingFang SC,Microsoft YaHei,sans-serif">
+    <rect x="1" y="1" width="598" height="904" rx="20" fill="#0d1117" stroke="#303b4a"/>
+    <rect x="20" y="20" width="560" height="228" rx="14" fill="#161e29" stroke="#303b4a"/>
+    <text x="44" y="62" font-size="23" fill="#98caff" font-weight="700" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace">01</text>
+    <text x="94" y="62" font-size="28" fill="#f0f6fc" font-weight="700">Agent 自动接入</text>
+    <rect x="20" y="278" width="560" height="342" rx="14" fill="#161e29" stroke="#303b4a"/>
+    <text x="44" y="320" font-size="23" fill="#7ee2b8" font-weight="700" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace">02</text>
+    <text x="94" y="320" font-size="28" fill="#f0f6fc" font-weight="700">五类业务分流</text>
+    <rect x="20" y="650" width="560" height="236" rx="14" fill="#161e29" stroke="#303b4a"/>
+    <text x="44" y="692" font-size="23" fill="#ffd28e" font-weight="700" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace">03</text>
+    <text x="94" y="692" font-size="28" fill="#f0f6fc" font-weight="700">浏览器配置与验收</text>
+    <path d="M300 253 L300 272" stroke="#60768e" stroke-width="2" fill="none"/><path d="M294 266 L300 272 L306 266" stroke="#60768e" stroke-width="2" fill="none"/>
+    <path d="M300 626 L300 644" stroke="#60768e" stroke-width="2" fill="none"/><path d="M294 638 L300 644 L306 638" stroke="#60768e" stroke-width="2" fill="none"/>
+    <text x="44" y="110" font-size="25" fill="#d5dfeb" font-weight="400">读取 AGENTS.md 与规则索引</text>
+    <text x="44" y="151" font-size="25" fill="#d5dfeb" font-weight="400">备份后替换旧业务分流与兜底</text>
+    <text x="44" y="191" font-size="25" fill="#d5dfeb" font-weight="400">保留节点与订阅，回读并复查</text>
+    <text x="44" y="226" font-size="22" fill="#98caff" font-weight="400">沿用现有客户端 · 交付恢复方法</text>
+    <text x="44" y="364" font-size="22" fill="#a9b9cb" font-weight="400" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace">01</text>
+    <text x="94" y="364" font-size="25" fill="#d5dfeb" font-weight="400">内网直连</text>
+    <rect x="413" y="339" width="138" height="34" rx="6" fill="#16352b"/>
+    <text x="440" y="364" font-size="22" fill="#7ee2b8" font-weight="600" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace">DIRECT</text>
+    <text x="44" y="407" font-size="22" fill="#a9b9cb" font-weight="400" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace">02</text>
+    <text x="94" y="407" font-size="25" fill="#d5dfeb" font-weight="400">广告拦截</text>
+    <rect x="413" y="382" width="138" height="34" rx="6" fill="#3b222c"/>
+    <text x="440" y="407" font-size="22" fill="#ffa7b4" font-weight="600" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace">REJECT</text>
+    <text x="44" y="450" font-size="22" fill="#a9b9cb" font-weight="400" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace">03</text>
+    <text x="94" y="450" font-size="25" fill="#d5dfeb" font-weight="400">海外代理</text>
+    <rect x="413" y="425" width="138" height="34" rx="6" fill="#192e49"/>
+    <text x="440" y="450" font-size="22" fill="#98caff" font-weight="600" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace">PROXY</text>
+    <text x="44" y="493" font-size="22" fill="#a9b9cb" font-weight="400" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace">04</text>
+    <text x="94" y="493" font-size="25" fill="#d5dfeb" font-weight="400">国内直连</text>
+    <rect x="413" y="468" width="138" height="34" rx="6" fill="#16352b"/>
+    <text x="440" y="493" font-size="22" fill="#7ee2b8" font-weight="600" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace">DIRECT</text>
+    <text x="44" y="536" font-size="22" fill="#a9b9cb" font-weight="400" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace">05</text>
+    <text x="94" y="536" font-size="25" fill="#d5dfeb" font-weight="400">中国 IP 兜底</text>
+    <rect x="413" y="511" width="138" height="34" rx="6" fill="#16352b"/>
+    <text x="440" y="536" font-size="22" fill="#7ee2b8" font-weight="600" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace">DIRECT</text>
+    <text x="44" y="582" font-size="24" fill="#7ee2b8" font-weight="400">另接入 WebRTC 防护 · 未匹配走代理</text>
+    <text x="44" y="742" font-size="25" fill="#d5dfeb" font-weight="400">检查所有浏览器与实际使用的配置档</text>
+    <text x="44" y="783" font-size="25" fill="#d5dfeb" font-weight="400">支持的浏览器自动安装、配置防护</text>
+    <text x="44" y="824" font-size="25" fill="#d5dfeb" font-weight="400">同一配置档实测 IP、DNS、WebRTC</text>
+    <text x="44" y="864" font-size="22" fill="#ffd28e" font-weight="400">逐项报告结果与未验证项</text>
+  </g>
+</svg>

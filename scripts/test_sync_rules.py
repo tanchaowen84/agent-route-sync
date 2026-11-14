@@ -162,6 +162,57 @@ class SyncTests(unittest.TestCase):
         result=operate('sync',self.root,fetch=self.helper_fetch())
         (Path(result['directory'])/HELPER).write_bytes(b'changed')
         with self.assertRaises(ValueError):operate('verify',self.root)
+
+    def guard_fetch(self, corrupt=False):
+        base = self.helper_fetch()
+        def fetch(url):
+            data = base(url)
+            if url.endswith('/manifest.json'):
+                manifest = json.loads(data)
+                for fmt, ext in (('mihomo', '.yaml'), ('surge', '.list'), ('sing-box', '.json')):
+                    name = fmt + '/webrtc-guard' + ext
+                    self.data[name] = b'guard'
+                    manifest['files'][name] = hashlib.sha256(b'guard').hexdigest()
+                return json.dumps(manifest).encode()
+            if corrupt and '/webrtc-guard' in url:
+                return b'corrupt'
+            return data
+        return fetch
+
+    def test_guard_downloads_for_each_format_and_rollback_to_old_release(self):
+        for fmt, expected in (('mihomo', 1), ('surge', 1), ('sing-box', 1), ('all', 3)):
+            with self.subTest(fmt=fmt):
+                root = self.root / fmt
+                self.sha = 'a' * 40
+                operate('sync', root, fmt, fetch=self.fetch)
+                self.sha = 'b' * 40
+                result = operate('sync', root, fmt, fetch=self.guard_fetch())
+                self.assertEqual(sum('/webrtc-guard' in n for n in result['files']), expected)
+                self.assertEqual(result['missing_optional_resources'], [])
+                self.assertEqual(operate('verify', root)['status'], 'verified')
+                self.assertEqual(operate('rollback', root)['generation'], 'a' * 40 + '-' + fmt)
+
+    def test_guard_corruption_preserves_current_generation(self):
+        self.sync(); before = (self.root / 'current.json').read_bytes()
+        self.sha = 'b' * 40
+        with self.assertRaisesRegex(ValueError, 'resource_hash_mismatch'):
+            operate('sync', self.root, fetch=self.guard_fetch(corrupt=True))
+        self.assertEqual((self.root / 'current.json').read_bytes(), before)
+
+    def test_new_inventory_cannot_silently_omit_guard(self):
+        result = operate('sync', self.root, 'mihomo', fetch=self.guard_fetch())
+        path = Path(result['directory']) / 'cache.json'
+        meta = json.loads(path.read_text())
+        meta['files'].remove('mihomo/webrtc-guard.yaml')
+        path.write_text(json.dumps(meta))
+        with self.assertRaisesRegex(ValueError, 'cache_inventory_invalid'):
+            operate('verify', self.root)
+        # An old tool may have downloaded the same release without optional files.
+        # Keep its existing cache readable, but expose the missing protection.
+        meta.pop('schema_version')
+        path.write_text(json.dumps(meta))
+        missing = operate('verify', self.root)['missing_optional_resources']
+        self.assertEqual(missing, ['mihomo/webrtc-guard.yaml'])
     def test_optimized_parser_rejects_invalid_input(self):
         code="from build_rules import domains; domains('not a domain')"
         p=subprocess.run([sys.executable,'-O','-B','-c',code],cwd=Path(__file__).parent,capture_output=True)

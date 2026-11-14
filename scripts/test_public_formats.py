@@ -16,7 +16,7 @@ class PublicFormatTests(unittest.TestCase):
             root = Path(folder)
             manifest = build(test_build_rules.SourceGenerationTests().fixture(), root)
             index = json.loads((root / 'index.json').read_text())
-            self.assertEqual(index['order'][3:-1], list(DATASETS))
+            self.assertEqual(index['order'][4:-1], list(DATASETS))
             self.assertEqual(index['generated_at_utc'], manifest['generated_at_utc'])
             for entry in index['datasets']:
                 for resource in entry['resources'].values():

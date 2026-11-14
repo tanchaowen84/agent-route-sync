@@ -55,6 +55,8 @@ def validate(generated, mihomo, sing_box, surge=None):
             checked([mihomo, 'convert-ruleset', behavior, 'yaml', generated / ('mihomo/' + dataset + '.yaml'), work / (dataset + '.mrs')])
             checked([sing_box, 'rule-set', 'compile', '--output', work / (dataset + '.srs'), generated / ('sing-box/' + dataset + '.json')])
         checked([sing_box, 'rule-set', 'compile', '--output', work / 'non-cn-ip.srs', generated / 'sing-box/non-cn-ip.json'])
+        checked([sing_box, 'rule-set', 'compile', '--output', work / 'webrtc-guard.srs', generated / 'sing-box/webrtc-guard.json'])
+        # Mihomo MRS does not support classical. Its guard is loaded by -t below.
 
         path = work / 'mihomo.yaml'
         path.write_text(yaml.safe_dump(localized_mihomo(examples / 'mihomo.yaml', generated, work), sort_keys=False))
@@ -72,7 +74,7 @@ def validate(generated, mihomo, sing_box, surge=None):
             path = work / 'surge.conf'
             path.write_text('[Proxy]\nPROXY = socks5, 127.0.0.1, 9\n' + content)
             checked([surge, '--check', path])
-    return {'mihomo_datasets': 5, 'sing_box_datasets': 6, 'full_template_checks': 3 + bool(surge),
+    return {'mihomo_datasets': 5, 'mihomo_classical_guards': 1, 'sing_box_datasets': 7, 'full_template_checks': 3 + bool(surge),
             'surge_checked': bool(surge), 'shadowrocket': 'structure_only', 'live_client_changed': False}
 
 

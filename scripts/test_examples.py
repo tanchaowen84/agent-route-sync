@@ -321,12 +321,12 @@ class TemplateTests(unittest.TestCase):
         config = json.loads((FULL / 'sing-box.json').read_text(encoding='utf-8'))
         rules = config['route']['rules']
         tags = {item['tag'] for item in config['route']['rule_set']}
-        self.assertEqual(tags, {'sr-' + d for d in DATASETS} | {'sr-non-cn-ip'})
+        self.assertEqual(tags, {'sr-' + d for d in DATASETS} | {'sr-non-cn-ip', 'sr-webrtc-guard'})
         self.assertEqual(rules[0], {'port': 53, 'action': 'hijack-dns'})
         sniff = [i for i, rule in enumerate(rules) if rule.get('action') == 'sniff']
         self.assertEqual(len(sniff), 2)
         final_domain_rules = [rule['rule_set'][0] for rule in rules[sniff[-1] + 1:]]
-        self.assertEqual(final_domain_rules, ['sr-' + d for d in DATASETS])
+        self.assertEqual(final_domain_rules, ['sr-webrtc-guard'] + ['sr-' + d for d in DATASETS])
         first_cn = next(i for i, rule in enumerate(rules) if rule.get('rule_set') == ['sr-cn-ip'])
         self.assertGreater(first_cn, sniff[-1])
         dns_rules = config['dns']['rules']
@@ -448,6 +448,7 @@ class AgentGuidanceTests(unittest.TestCase):
                     'adapter_url': 'https://github.com/ryuu-restart/agent-route/blob/master/docs/CLIENTS.md#' + client,
                     'routing_mode': 'replace',
                     'final_action': 'PROXY',
+                    'protections': ['webrtc-guard'],
                 })
                 self.assertIn(f']({master}{path})', readme)
                 self.assertRegex(adapters, rf'(?im)^### {re.escape(client)}$')
@@ -460,12 +461,21 @@ class AgentGuidanceTests(unittest.TestCase):
         for name, text in (('prompt', prompt), ('guidance', guidance)):
             with self.subTest(name=name):
                 self.assertRegex(text, r'替换[^。\n]*业务分流[^。\n]*兜底')
-                self.assertIn('停用', text)
+                self.assertIn('备份', text)
                 self.assertIn('保留节点订阅', text)
-                self.assertIn('旧业务规则', text)
-                self.assertIn('旧兜底', text)
-                self.assertRegex(text, r'刷新节点订阅后[^。\n]*回读')
-                self.assertIn('覆盖未完成', text)
+        # The copied request authorizes the work; the linked guide owns the SOP.
+        self.assertIn('我授权', prompt)
+        self.assertIn('客户端重载和一次现有节点订阅刷新', prompt)
+        self.assertIn('安装 webrtc-guard', prompt)
+        self.assertRegex(prompt, r'我接受[^。\n]*通话、会议和 P2P')
+        self.assertIn('停用', guidance)
+        self.assertIn('旧业务规则', guidance)
+        self.assertIn('旧兜底', guidance)
+        self.assertRegex(guidance, r'刷新节点订阅后[^。\n]*回读')
+        self.assertIn('覆盖未完成', guidance)
+        self.assertIn('默认代理出站', guidance)
+        for domain in ('claude.ai', 'claude.com', 'anthropic.com', 'api.anthropic.com'):
+            self.assertIn(f'`{domain}`', guidance)
 
     def test_browser_checks_link_to_the_three_test_pages(self):
         for name in ('README.md', 'AGENTS.md'):
@@ -479,21 +489,24 @@ class AgentGuidanceTests(unittest.TestCase):
         prompt_section = readme.partition('<a id="agent-prompt"></a>')[2]
         prompt = prompt_section.partition('```text\n')[2].partition('\n```')[0]
         self.assertIn(BASE_URL.replace('/release/', '/master/') + 'AGENTS.md', prompt)
-        self.assertIn(BASE_URL + 'index.json', prompt)
-        self.assertEqual(
-            re.findall(r'^https://ippure\.com/\S*$', prompt, re.M),
-            [url for _, url in self.BROWSER_CHECK_LINKS],
-        )
+        self.assertIn('及其中的规则索引', prompt)
         self.assertIn('未验证', prompt)
         self.assertIn('本机已安装的所有浏览器', prompt)
-        self.assertIn('缺扩展就从官方商店安装', prompt)
-        self.assertIn('WebRTC Network Limiter', prompt)
-        self.assertIn('https://chromewebstore.google.com/detail/webrtc-network-limiter/', prompt)
-        self.assertIn('disable_non_proxied_udp', prompt)
-        self.assertIn('应用官方支持的等效防护', prompt)
-        self.assertRegex(prompt, r'在每个浏览器实际使用的配置档里[^。\n]*完成 IP、DNS 和 WebRTC 检测')
+        self.assertRegex(prompt, r'在实际使用的配置档[^。\n]*自动安装并配置 WebRTC 防护')
+        self.assertIn('IP、DNS、WebRTC 检测', prompt)
         guidance = (ROOT / 'AGENTS.md').read_text(encoding='utf-8')
+        self.assertIn(BASE_URL + 'index.json', guidance)
+        # Index, installer, policy, fallback and test URLs remain mandatory in the guide
+        # referenced by the short prompt, instead of being duplicated in both.
+        self.assertIn('本机已安装的所有浏览器', guidance)
         self.assertIn('Agent 从官方商店补装缺失的扩展', guidance)
+        self.assertIn('WebRTC Network Limiter', guidance)
+        self.assertIn('https://chromewebstore.google.com/detail/webrtc-network-limiter/', guidance)
+        self.assertIn('disable_non_proxied_udp', guidance)
+        self.assertIn('Use my proxy server (if present)', guidance)
+        self.assertIn('Chrome 和 Edge 固定采用此扩展方案', guidance)
+        self.assertIn('等效防护', guidance)
+        self.assertIn('待配置', guidance)
         self.assertRegex(guidance, r'Agent 在同一实际使用的配置档[^。\n]*执行 IP、DNS 和 WebRTC 检测')
         self.assertIn('docs/DNS-WEBRTC.md#webrtc-methods', guidance)
 

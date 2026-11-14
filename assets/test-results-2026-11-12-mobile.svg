@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="600" height="922" viewBox="0 0 600 922" role="img" aria-labelledby="title desc">
+  <title id="title">AgentRoute 接入前后对比，移动版</title>
+  <desc id="desc">2026-11-12 用户试跑，同一 Chrome 配置档和节点。WebRTC 从 3 项返回直连 IP，变为 9 项均未报告泄露。DNS 截图可见的国内电信解析器未再出现。27 条规则入口及 5 个远程规则集接管分流，15 个节点与 26 个策略组保留。</desc>
+  <rect x="1" y="1" width="598" height="920" rx="20" fill="#f6f8fb" stroke="#dce3eb"/>
+  <g font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif">
+    <text x="24" y="40" font-size="22" font-weight="600" fill="#536579">AGENTROUTE · 2026.11.12</text>
+    <text x="24" y="91" font-size="36" font-weight="700" fill="#152b40">同一节点，接入前后对比</text>
+    <text x="24" y="130" font-size="25" fill="#536579">FlClash + Chrome · 同一配置档</text>
+
+    <rect x="24" y="154" width="552" height="206" rx="12" fill="#fff" stroke="#dce3eb"/>
+    <text x="46" y="198" font-size="29" font-weight="700" fill="#152b40">WebRTC · 本次 9 项探测</text>
+    <text x="46" y="246" font-size="26" fill="#91421d">使用前</text>
+    <text x="151" y="246" font-size="29" font-weight="600" fill="#91421d">3 项返回直连 IP</text>
+    <text x="46" y="292" font-size="26" fill="#176a5b">接入后</text>
+    <text x="151" y="292" font-size="29" font-weight="700" fill="#176a5b">9 项均未报告泄露</text>
+    <text x="46" y="335" font-size="24" fill="#536579">限该 Chrome 配置档的本次结果</text>
+
+    <rect x="24" y="378" width="552" height="212" rx="12" fill="#fff" stroke="#dce3eb"/>
+    <text x="46" y="422" font-size="29" font-weight="700" fill="#152b40">DNS · 截图可见结果</text>
+    <text x="46" y="470" font-size="26" fill="#91421d">使用前</text>
+    <text x="151" y="470" font-size="26" fill="#34485d">国内电信 + 香港解析器</text>
+    <text x="46" y="516" font-size="26" fill="#176a5b">接入后</text>
+    <text x="151" y="516" font-size="26" font-weight="600" fill="#176a5b">香港 Google / Cloudflare</text>
+    <text x="46" y="560" font-size="24" fill="#536579">可见范围内未出现前图的国内电信</text>
+
+    <rect x="24" y="608" width="552" height="164" rx="12" fill="#fff" stroke="#dce3eb"/>
+    <text x="46" y="652" font-size="29" font-weight="700" fill="#152b40">分流规则</text>
+    <text x="46" y="698" font-size="26" fill="#34485d">使用前  2,822 条 · 0 个外部资源</text>
+    <text x="46" y="742" font-size="26" font-weight="600" fill="#176a5b">接入后  27 条入口 + 5 个远程规则集</text>
+
+    <rect x="24" y="790" width="552" height="108" rx="12" fill="#fff" stroke="#dce3eb"/>
+    <text x="46" y="833" font-size="29" font-weight="700" fill="#152b40">节点与策略组保留</text>
+    <text x="46" y="875" font-size="27" fill="#176a5b">前后均为 15 个节点 · 26 个策略组</text>
+
+  </g>
+</svg>

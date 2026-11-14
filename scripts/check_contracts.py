@@ -18,7 +18,7 @@ with tempfile.TemporaryDirectory() as folder:
         jsonschema.Draft202012Validator(schema, format_checker=jsonschema.FormatChecker()).validate(metadata[name])
 
 index = metadata['index']
-rule_urls = [dataset['resources'][fmt]['url'] for dataset in index['datasets']
+rule_urls = [dataset['resources'][fmt]['url'] for dataset in index['datasets'] + index['protections']
              for fmt in ('mihomo', 'surge', 'sing-box')]
 readme = (root / 'README.md').read_text(encoding='utf-8')
 rule_table = '\n'.join(line for line in readme.splitlines() if line.startswith('|'))

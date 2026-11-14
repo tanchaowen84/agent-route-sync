@@ -1,0 +1,44 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="684" viewBox="0 0 1200 684" role="img" aria-labelledby="title desc">
+  <title id="title">AgentRoute 接入前后对比，2026-11-12 用户试跑</title>
+  <desc id="desc">同一 Chrome 配置档、同一节点。WebRTC 接入前 3 项返回直连 IP，接入后 9 项均未报告泄露。DNS 截图可见的国内电信解析器在接入后未出现。规则入口由 2822 条变为 27 条加 5 个远程规则集，15 个节点与 26 个策略组保留。根据用户测试材料整理。</desc>
+  <rect x="1" y="1" width="1198" height="682" rx="24" fill="#f6f8fb" stroke="#dce3eb"/>
+  <g font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif">
+    <rect x="32" y="32" width="5" height="76" rx="2" fill="#176a5b"/>
+    <text x="52" y="54" font-size="16" font-weight="700" letter-spacing="2" fill="#52647a">AGENTROUTE / TEST RUN · 2026.11.12</text>
+    <text x="52" y="103" font-size="38" font-weight="700" fill="#152b40">同一节点，接入前后对比</text>
+    <text x="52" y="143" font-size="22" fill="#536579">FlClash + Chrome · 同一配置档 · 根据用户测试材料整理</text>
+
+    <rect x="32" y="178" width="1136" height="473" rx="16" fill="#ffffff" stroke="#dce3eb"/>
+    <path d="M32 246H1168M32 360H1168M32 474H1168M32 565H1168M220 178V651M650 178V651" fill="none" stroke="#e4e9ef"/>
+    <rect x="234" y="190" width="402" height="44" rx="8" fill="#fff3eb"/>
+    <rect x="664" y="190" width="490" height="44" rx="8" fill="#e6f5ef"/>
+    <text x="58" y="219" font-size="21" font-weight="600" fill="#536579">检查项目</text>
+    <text x="258" y="219" font-size="22" font-weight="700" fill="#91421d">使用前</text>
+    <text x="688" y="219" font-size="22" font-weight="700" fill="#176a5b">接入后</text>
+
+    <text x="58" y="296" font-size="25" font-weight="700" fill="#152b40">WebRTC</text>
+    <text x="58" y="329" font-size="18" fill="#63758a">本次 9 项探测</text>
+    <text x="258" y="297" font-size="29" font-weight="700" fill="#a34522">3 项返回直连 IP</text>
+    <text x="258" y="333" font-size="20" fill="#63758a">不同于网页的代理出口</text>
+    <text x="688" y="297" font-size="29" font-weight="700" fill="#176a5b">9 项均未报告泄露</text>
+    <text x="688" y="333" font-size="20" fill="#63758a">对应 Chrome 配置档的本次结果</text>
+
+    <text x="58" y="405" font-size="25" font-weight="700" fill="#152b40">DNS</text>
+    <text x="58" y="438" font-size="18" fill="#63758a">截图可见结果</text>
+    <text x="258" y="406" font-size="25" font-weight="600" fill="#34485d">国内电信 + 香港解析器</text>
+    <text x="258" y="442" font-size="20" fill="#63758a">存在国内运营商解析器</text>
+    <text x="688" y="406" font-size="25" font-weight="600" fill="#176a5b">香港 Google / Cloudflare</text>
+    <text x="688" y="442" font-size="20" fill="#63758a">可见范围内未出现前图的国内电信</text>
+
+    <text x="58" y="525" font-size="25" font-weight="700" fill="#152b40">分流规则</text>
+    <text x="258" y="515" font-size="27" font-weight="700" fill="#34485d">2,822 条</text>
+    <text x="258" y="546" font-size="19" fill="#63758a">原配置 · 0 个外部资源</text>
+    <text x="688" y="515" font-size="27" font-weight="700" fill="#176a5b">27 条入口 + 5 个远程规则集</text>
+    <text x="688" y="546" font-size="19" fill="#63758a">Agent 回报已覆盖旧业务规则与兜底</text>
+
+    <text x="58" y="617" font-size="25" font-weight="700" fill="#152b40">节点与策略组</text>
+    <text x="258" y="617" font-size="25" font-weight="600" fill="#34485d">15 个节点 · 26 个策略组</text>
+    <text x="688" y="617" font-size="25" font-weight="600" fill="#176a5b">15 个节点 · 26 个策略组保留</text>
+
+  </g>
+</svg>
