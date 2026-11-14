@@ -1,11 +1,11 @@
 {
   "upstream_repository": "https://github.com/ryuu-restart/agent-route.git",
   "upstream_commits": {
-    "master": "dc5fc38971a5743f1b24822d646dc3052dadd480",
-    "release": "1f27bb84512aa2cf4a79851d70fd930f79c51019"
+    "master": "08f0258ecb2035ca7e11170d1845611071b84a27",
+    "release": "0ea2275f64faf63263f53eed45edc55f65321922"
   },
-  "release_generated_at_utc": "2026-11-13T02:48:48.893654+00:00",
-  "synced_at_utc": "2026-11-13T06:43:15.719164+00:00",
+  "release_generated_at_utc": "2026-11-14T02:37:12.510105+00:00",
+  "synced_at_utc": "2026-11-14T06:20:18.846286+00:00",
   "source_excludes": [
     ".github/"
   ],
