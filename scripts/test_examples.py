@@ -4,10 +4,13 @@ import json
 import os
 from pathlib import Path
 import re
+import tempfile
 import unittest
 
 import yaml
 
+import test_build_rules
+from build_rules import build
 from public_formats import BASE_URL, DATASETS, SYNTHETIC
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -270,6 +273,62 @@ class TemplateTests(unittest.TestCase):
         self.assertLess(position(rules, 'fc00::/18'), position(rules, 'fc00::/7'))
         self.assertLess(position(rules, 'fc00::/7'), positions[0])
 
+    def test_first_match_changes_when_a_proxy_suffix_is_prepended(self):
+        # Freeze the overlap in the fixture. Upstream membership may change independently.
+        raw = test_build_rules.SourceGenerationTests().fixture()
+        raw['foreign_domains'] += 'domain:anthropic.com\n'
+        raw['advertising_domains'] += 'domain:statsig.anthropic.com\n'
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            build(raw, root)
+            index = json.loads((root / 'index.json').read_text())
+            domain_sets = {}
+            for entry in index['datasets']:
+                if entry['id'] != 'cn-ip':
+                    path = root / entry['resources']['sing-box']['path']
+                    domain_sets[entry['id']] = json.loads(path.read_text())['rules']
+
+        actions = {entry['id']: entry['action'] for entry in index['datasets']}
+        routes = json.loads((FULL / 'sing-box.json').read_text())['route']['rules']
+
+        def accepts(setting, value):
+            return value in setting if isinstance(setting, list) else setting == value
+
+        def first_route(rules, sample):
+            # These samples arrive as TCP/443 with a hostname, not a destination IP.
+            for rule in rules:
+                if rule.get('action', 'route') not in ('route', 'reject'):
+                    continue
+                if not accepts(rule.get('network', 'tcp'), 'tcp') or not accepts(rule.get('port', 443), 443):
+                    continue
+                conditions = {k: v for k, v in rule.items() if k not in ('action', 'outbound', 'network', 'port')}
+                if conditions.keys() == {'ip_cidr'}:
+                    continue
+                self.assertLessEqual(conditions.keys(), DOMAIN_MATCHERS, f'Unsupported route conditions: {rule}')
+                if not conditions or sing_box_matches(conditions, sample):
+                    return rule
+            self.fail(f'No route decision for {sample["name"]}')
+
+        cases = [('api.anthropic.com', 'anthropic.com', 'proxy', 'PROXY'),
+                 ('statsig.anthropic.com', 'anthropic.com', 'reject', 'REJECT'),
+                 ('router.asus.com', 'asus.com', 'private', 'DIRECT')]
+        for host, suffix, source, action in cases:
+            with self.subTest(host=host):
+                sample = {'name': host, 'sets': set()}
+                matched = {name for name, rules in domain_sets.items()
+                           if any(sing_box_matches(rule, sample) for rule in rules)}
+                first = next(name for name in index['order'] if name in matched)
+                self.assertEqual((first, actions[first]), (source, action))
+
+                sample['sets'] = {'sr-' + name for name in matched}
+                original = first_route(routes, sample)
+                original_action = 'REJECT' if original.get('action') == 'reject' else original['outbound']
+                self.assertEqual((original.get('rule_set'), original_action), (['sr-' + source], action))
+                for candidate_suffix in ('anthropic.com', 'asus.com'):
+                    override = {'domain_suffix': [candidate_suffix], 'action': 'route', 'outbound': 'PROXY'}
+                    expected = override if candidate_suffix == suffix else original
+                    self.assertEqual(first_route([override, *routes], sample), expected)
+
     def test_ini_templates_order_and_resolver_routes(self):
         for name in ('surge.conf', 'shadowrocket.conf'):
             with self.subTest(name=name):
@@ -518,7 +577,8 @@ class AgentGuidanceTests(unittest.TestCase):
         names = re.findall(r'^\*\*(.+?)\*\*$', section, re.M)
         blocks = re.split(r'^\*\*.+?\*\*$', section, flags=re.M)[1:]
         for required in ('TUN 与模式', '规则来源与刷新', '规则加载与分流', '用户例外优先', '核心自有地址',
-                         '实际可用性', 'DNS', 'WebRTC', 'IPv6', '持久化', '恢复方法'):
+                         '实际可用性', 'DNS', 'WebRTC', 'IPv6', '持久化', '恢复方法',
+                         '固定代理出口（按需）', '故障时禁止直连（按需）'):
             self.assertIn(required, names)
         self.assertEqual(len(names), len(blocks))
         for name, block in zip(names, blocks):
