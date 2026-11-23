@@ -3,7 +3,6 @@ import contextlib
 import datetime
 import hashlib
 import io
-import ipaddress
 import json
 import os
 from pathlib import Path
@@ -13,27 +12,11 @@ import urllib.error
 from unittest.mock import MagicMock, patch
 
 import build_rules
+from rule_fixtures import source_inputs
 from build_rules import build, fetch, private_domains, refuse_large_shrink, stale_repositories
 
 
 class SourceGenerationTests(unittest.TestCase):
-    def fixture(self):
-        base = int(ipaddress.ip_address('1.0.0.0'))
-        ipv6 = int(ipaddress.ip_address('2400::'))
-        return {
-            'china_domains': '\n'.join(['domain:' + name for name in
-                ('baidu.com', 'qq.com', 'taobao.com', 'jd.com', 'asus.com')]
-                + ['domain:domestic' + str(i) + '.example' for i in range(1001)]) + '\n',
-            'foreign_domains': '\n'.join(['domain:' + name for name in
-                ('google.com', 'gstatic.com', 'wikipedia.org', 'github.com', 'asus.com', 'ts.net')]
-                + ['full:foreign' + str(i) + '.example' for i in range(1001)]) + '\n',
-            'private_domains': 'full:router.asus.com\ndomain:ts.net\ndomain:lan\n',
-            'china_ip': '\n'.join([str(ipaddress.ip_address(base + i)) + '/32' for i in range(1001)]
-                                  + [str(ipaddress.ip_address(ipv6 + i)) + '/128' for i in range(1001)]) + '\n',
-            'advertising_domains': '\n'.join(['domain:doubleclick.net']
-                + ['domain:ad' + str(i) + '.example' for i in range(1001)]) + '\n',
-        }
-
     def response(self, body, headers=None):
         response = MagicMock(status=200, headers=headers or {})
         response.__enter__.return_value = response
@@ -59,14 +42,14 @@ class SourceGenerationTests(unittest.TestCase):
 
     def test_build_refuses_a_china_prefix_cut_short(self):
         for line in ('2000::/3', '32.0.0.0/3'):
-            raw = self.fixture()
+            raw = source_inputs()
             raw['china_ip'] += line + '\n'
             with self.subTest(line=line), tempfile.TemporaryDirectory() as folder, \
                  self.assertRaisesRegex(ValueError, 'china_ip_prefix_too_broad'):
                 build(raw, Path(folder))
 
     def test_generation_preserves_foreign_input_and_private_matching_semantics(self):
-        raw = self.fixture()
+        raw = source_inputs()
         with tempfile.TemporaryDirectory() as folder:
             output = Path(folder)
             manifest = build(raw, output)
@@ -93,7 +76,7 @@ class SourceGenerationTests(unittest.TestCase):
                                    ('advertising_domains', 'domain:chatgpt.com', 'advertising_blocks_protected_site'),
                                    ('china_domains', 'domain:chatgpt.com', 'foreign_domain_would_be_direct'),
                                    ('china_domains', 'domain:githubusercontent.com', 'foreign_domain_would_be_direct')):
-            raw = self.fixture()
+            raw = source_inputs()
             raw[field] += line + '\n'
             with self.subTest(line=line, field=field), tempfile.TemporaryDirectory() as folder, \
                  self.assertRaisesRegex(ValueError, error):
@@ -102,7 +85,7 @@ class SourceGenerationTests(unittest.TestCase):
             private_domains('domain:githubusercontent.com')
 
     def test_losing_core_overseas_coverage_is_refused(self):
-        raw = self.fixture()
+        raw = source_inputs()
         raw['foreign_domains'] = raw['foreign_domains'].replace('domain:google.com\n', '')
         with tempfile.TemporaryDirectory() as folder, self.assertRaisesRegex(ValueError, 'foreign_domain_coverage_lost'):
             build(raw, Path(folder))
@@ -126,43 +109,73 @@ class SourceGenerationTests(unittest.TestCase):
         self.assertEqual(stale_repositories(versions, now), ['a/old'])
 
     def run_main(self, folder, committed_at, published, environment=None):
-        raw = self.fixture()
+        raw = source_inputs()
         inputs = build_rules.REGISTRY['inputs']
 
+        urls = []
+        refs_url = 'https://api.github.com/repos/test/rules/git/matching-refs/heads/release'
+        release_sha = 'b' * 40
+        index_url = 'https://raw.githubusercontent.com/test/rules/' + release_sha + '/index.json'
+
         def fake_fetch(url):
+            urls.append(url)
+            if url == refs_url:
+                return json.dumps([] if published is None else [
+                    {'ref': 'refs/heads/release', 'object': {'type': 'commit', 'sha': release_sha}}])
+            if url == index_url:
+                return json.dumps(published)
             if '/commits/' in url:
                 return json.dumps({'sha': 'a' * 40, 'commit': {'committer': {'date': committed_at}}})
-            if url.startswith(build_rules.BASE_URL):
-                if published is None:
-                    raise urllib.error.HTTPError(url, 404, 'Not Found', None, None)
-                return json.dumps(published)
             return next(raw[key] for key, entry in inputs.items() if url.endswith('/' + entry['path']))
 
         step_output = Path(folder) / 'step-output'
         step_output.write_text('', encoding='utf-8')
-        env = {'GITHUB_OUTPUT': str(step_output), 'AGENTROUTE_ALLOW_SHRINK': '', **(environment or {})}
+        env = {'AGENTROUTE_RELEASE_REPOSITORY': 'test/rules', 'GITHUB_OUTPUT': str(step_output),
+               'AGENTROUTE_ALLOW_SHRINK': '', **(environment or {})}
         with patch.object(build_rules, 'fetch', fake_fetch), patch.dict(os.environ, env), \
              contextlib.redirect_stdout(io.StringIO()):
             build_rules.main(Path(folder) / 'generated')
+        expected_urls = [refs_url] if published is None else [refs_url, index_url]
+        self.assertEqual(urls[:len(expected_urls)], expected_urls)
         return step_output.read_text(encoding='utf-8')
 
     def test_main_records_upstream_dates_and_reports_stale_sources(self):
         fresh = datetime.datetime.now(datetime.timezone.utc).isoformat()
         with tempfile.TemporaryDirectory() as folder:
-            self.assertEqual(self.run_main(folder, fresh, None), '')
+            self.assertEqual(self.run_main(folder, fresh, None), 'release_baseline=absent\n')
             manifest = json.loads((Path(folder) / 'generated/manifest.json').read_text(encoding='utf-8'))
             self.assertEqual({entry['committed_at'] for entry in manifest['source_versions'].values()}, {fresh})
         with tempfile.TemporaryDirectory() as folder:
             line = self.run_main(folder, '2020-01-01T00:00:00Z', None)
-            self.assertRegex(line, r'^stale_upstreams=Loyalsoldier/')
+            self.assertRegex(line, r'\nstale_upstreams=Loyalsoldier/')
 
     def test_main_refuses_a_large_drop_from_the_published_generation(self):
         fresh = datetime.datetime.now(datetime.timezone.utc).isoformat()
-        published = self.index(proxy=27000)
+        published = self.index(private=1, reject=1, proxy=27000, direct=1, **{'cn-ip': 1})
         with tempfile.TemporaryDirectory() as folder, self.assertRaisesRegex(ValueError, 'dataset_shrank_too_much:proxy'):
             self.run_main(folder, fresh, published)
         with tempfile.TemporaryDirectory() as folder:
-            self.run_main(folder, fresh, published, {'AGENTROUTE_ALLOW_SHRINK': 'true'})
+            self.assertEqual(self.run_main(folder, fresh, published, {'AGENTROUTE_ALLOW_SHRINK': 'true'}),
+                             'release_baseline=' + 'b' * 40 + '\n')
+
+
+class ReleaseBaselineTests(unittest.TestCase):
+    def test_ref_lookup_failures_and_missing_pinned_index_are_fatal(self):
+        error = urllib.error.HTTPError('https://example.org', 404, 'Not Found', None, None)
+        ref = {'ref': 'refs/heads/release', 'object': {'type': 'commit', 'sha': 'a' * 40}}
+        for replies, exception in (([error], urllib.error.HTTPError),
+                                   ([json.dumps([ref]), error], urllib.error.HTTPError),
+                                   ([json.dumps({'message': 'failed'})], ValueError),
+                                   ([json.dumps([ref, ref])], ValueError),
+                                   ([json.dumps([ref]), '{"datasets": []}'], ValueError),
+                                   ([json.dumps([{**ref, 'object': {'type': 'commit', 'sha': '0' * 40}}])],
+                                    ValueError)):
+            with self.subTest(replies=replies), patch.object(build_rules, 'fetch', side_effect=replies), \
+                 self.assertRaises(exception):
+                build_rules.release_baseline('test/rules')
+        # The matching-refs API can return other branches beginning with "release".
+        with patch.object(build_rules, 'fetch', return_value=json.dumps([{**ref, 'ref': 'refs/heads/release-old'}])):
+            self.assertEqual(build_rules.release_baseline('test/rules'), ('absent', None))
 
 
 if __name__ == '__main__':

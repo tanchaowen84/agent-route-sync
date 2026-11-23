@@ -9,18 +9,18 @@ import yaml
 
 from build_rules import build
 from public_formats import BASE_URL, export_webrtc_guard
-from test_build_rules import SourceGenerationTests
+from rule_fixtures import source_inputs
 from test_examples import FULL, rules_of
 
 
-def text_match(lines, host, port):
+def text_match(lines, host, port, port_rule):
     for line in lines:
         kind, value = line.split(',')
-        if kind == 'DST-PORT' and port == int(value):
+        if kind == port_rule and port == int(value):
             return True
         if kind == 'DOMAIN-KEYWORD' and value in host:
             return True
-        if kind not in ('DST-PORT', 'DOMAIN-KEYWORD'):
+        if kind not in (port_rule, 'DOMAIN-KEYWORD'):
             raise ValueError('unexpected guard condition')
     return False
 
@@ -39,16 +39,19 @@ class WebRTCGuardTests(unittest.TestCase):
             mihomo = yaml.safe_load((root / 'mihomo/webrtc-guard.yaml').read_text())['payload']
             surge = (root / 'surge/webrtc-guard.list').read_text().splitlines()
             source = json.loads((root / 'sing-box/webrtc-guard.json').read_text())['rules']
-            self.assertEqual(mihomo, surge)
+            ports = (3478, 5349, 19302, 19303, 19304, 19305, 19306, 19307, 19308, 19309)
+            self.assertCountEqual(surge, [f'DEST-PORT,{p}' for p in ports] + ['DOMAIN-KEYWORD,stun'])
+            self.assertCountEqual(mihomo, [f'DST-PORT,{p}' for p in ports] + ['DOMAIN-KEYWORD,stun'])
             self.assertTrue(all(set(r) <= {'port', 'domain_keyword'} for r in source))
             cases = [(host, port, True) for host in ('unlisted.example', '203.0.113.8', '2001:db8::8')
-                     for port in (3478, 5349, 19302, 19303, 19304, 19305, 19306, 19307, 19308, 19309)]
+                     for port in ports]
             cases += [('stun.custom.example', 45678, True), ('api.anthropic.com', 443, False),
                       ('www.baidu.com', 443, False), ('unlisted.example', 19301, False),
                       ('203.0.113.8', 19310, False), ('2001:db8::8', 45678, False)]
             for host, port, expected in cases:
                 with self.subTest(host=host, port=port):
-                    self.assertEqual(text_match(surge, host, port), expected)
+                    self.assertEqual(text_match(surge, host, port, 'DEST-PORT'), expected)
+                    self.assertEqual(text_match(mihomo, host, port, 'DST-PORT'), expected)
                     self.assertEqual(source_match(source, host, port), expected)
             for resource in entry['resources'].values():
                 self.assertEqual(resource['sha256'], files[resource['path']])
@@ -57,7 +60,7 @@ class WebRTCGuardTests(unittest.TestCase):
     def test_guard_is_separate_from_existing_domain_datasets(self):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)
-            manifest = build(SourceGenerationTests().fixture(), root)
+            manifest = build(source_inputs(), root)
             index = json.loads((root / 'index.json').read_text())
             self.assertEqual([d['id'] for d in index['datasets']], ['private', 'reject', 'proxy', 'direct', 'cn-ip'])
             guard, = index['protections']

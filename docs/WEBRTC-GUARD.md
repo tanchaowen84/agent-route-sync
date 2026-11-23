@@ -21,8 +21,8 @@
 
 | 客户端 | 文件 | 引用要求 |
 | --- | --- | --- |
-| Mihomo | [webrtc-guard.yaml](https://raw.githubusercontent.com/ryuu-restart/agent-route/release/mihomo/webrtc-guard.yaml) | `behavior: classical`、`format: yaml`，引用动作 `REJECT` |
-| Surge / Shadowrocket | [webrtc-guard.list](https://raw.githubusercontent.com/ryuu-restart/agent-route/release/surge/webrtc-guard.list) | 无策略列的 RULE-SET，客户端引用动作 `REJECT`；小火箭须实机核对端口条件支持情况 |
+| Mihomo | [webrtc-guard.yaml](https://raw.githubusercontent.com/ryuu-restart/agent-route/release/mihomo/webrtc-guard.yaml) | `behavior: classical`、`format: yaml`，目标端口写作 `DST-PORT`，引用动作 `REJECT` |
+| Surge / Shadowrocket | [webrtc-guard.list](https://raw.githubusercontent.com/ryuu-restart/agent-route/release/surge/webrtc-guard.list) | 两者共用无策略列的 RULE-SET，目标端口写作 `DEST-PORT`，引用动作 `REJECT`。小火箭实机加载与命中待验证。[Surge 端口语法](https://manual.nssurge.com/rules/source-and-port.html) · [小火箭证据](CLIENT-EVIDENCE.md#客户端案例) |
 | sing-box | [webrtc-guard.json](https://raw.githubusercontent.com/ryuu-restart/agent-route/release/sing-box/webrtc-guard.json) | source version 3；路由引用使用 `action: reject` |
 
 这份资源包含端口条件，不可混进 Mihomo 的 domain 规则集，也不用于 DNS 域名策略。sing-box 将端口和域名分别放在两条 headless rule 中，保持“任一命中”语义。使用明确拒绝动作，不依赖节点的 UDP 能力，不设置失败后 DIRECT 的回退。

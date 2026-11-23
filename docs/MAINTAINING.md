@@ -12,9 +12,9 @@
 
 开发环境按 requirements-dev.txt 安装固定版本依赖。运行单元测试、优化模式测试、check_contracts.py、原生 validate_native.py；比较同批输入的旧九个数据文件。每日 UTC+8 06:30 计划和手动入口保留。Action 使用完整提交标识，原生工具下载校验 SHA-256。
 
-发布分四个任务：test 在三平台跑测试；build 只用标准库生成数据并上传；validate 下载同一份数据做原生检查，装什么都碰不到待发布的字节；publish 是唯一有写权限的任务，不检出代码也不安装任何东西，核对字节与 build 一致后推到 release。PR 只跑前三个。
+发布有四步。test 在三平台跑离线测试。build 用标准库生成文本，再以固定原生工具编译可选格式，将含全部格式的候选作为一个工件上传，并记录 ID 和最终清单摘要。validate 按 ID 取回产物，核对摘要、实际文件、索引、清单及原生格式。publish 是唯一有写权限的任务，它取同一 ID 的产物，在独立目录准备提交，逐项核对 Git 实际收录的文件、模式和内容摘要。最后一步才使用写令牌推送这份提交。PR 只跑前三步。
 
-release 是只有一个提交的滚动分支：每次发布都新建无历史的提交并强推，用预期旧 SHA 保护并发，所以不能从分支上找回旧版本。任何验证失败保持线上旧代。不修改 master 历史。回退代码用正常 revert，同时保留既有公开文件地址。
+release 每次发布都新建无父提交。构建在选上游输入前先记下当时的 release 提交，用该提交的索引做缩水比较。发布前再确认本次工作流使用的源码仍是 master 顶端，更新 release 时由 Git 检查它是否仍在构建所见的位置。首次发布只允许创建尚不存在的引用。只要另一份候选抢先发布，旧候选就失去写入资格。此时应从当前 master 发起新构建，重新比较。已离开分支的规则代不保证能从远端找回，可靠的数据回退依赖本地缓存。源码回退使用正常 revert 并保留公开地址。GitHub 重新运行旧任务会沿用原事件的源码提交。[工作流重跑](https://docs.github.com/en/actions/how-tos/manage-workflow-runs/re-run-workflows-and-jobs) · [Git 发布租约](https://git-scm.com/docs/git-push)
 
 GitHub 可能因仓库长期无活动停用定时任务，任务失败也只通知所有者。README 的“规则库发布时间”徽章显示 release 最后一次发布的时间。发布清单超过 48 小时时去看 Actions。同步工具会拒绝过期发布，客户端可以继续用旧名单。
 
@@ -34,11 +34,30 @@ GitHub 可能因仓库长期无活动停用定时任务，任务失败也只通�
 
 Mihomo/sing-box 原生验证可在 Linux CI 执行；Surge 是可选本机原生检查，Shadowrocket 仅文本结构检查。不得将这些结果写成实体 iOS、DNS/WebRTC 泄露或真实 VPN/TUN 流量已通过。
 
-WebRTC 防护独立发布三种格式，不改变五类业务规则的十五个地址。构建从本地维护的端口与关键字生成资源；参考来源、固定提交和 MIT 许可记录在 sources 与 NOTICE。新增条件须验证三种格式的等效匹配、IP 字面量、IPv6、非标准端口边界、模板优先级和同步失败保留。Mihomo classical 资源通过完整配置加载检查，不转换为 MRS。
+WebRTC 防护独立发布三种格式，不改变五类业务规则的十五个地址。构建从本地维护的端口与关键字生成资源；参考来源、固定提交和 MIT 许可记录在 sources 与 NOTICE。新增条件须验证三种格式的等效匹配、IP 字面量、IPv6、非标准端口边界、模板优先级和同步失败保留。Mihomo 的 classical 规则使用 YAML 和 `DST-PORT`，不转换为 MRS。原生检查读取候选 YAML 的 `payload`，作为内联 classical 规则交给 `mihomo -t` 逐条解析，并单独检查完整模板。Surge 使用 `DEST-PORT`。小火箭共用该文件，远程加载和命中证据单列。[客户端证据](CLIENT-EVIDENCE.md#客户端案例)
 
 保持已发布的规则地址稳定，下游的配置里写的就是这些地址。下游的部署和更新方式由他们自己决定，本项目不提供这部分代码。
 
 维护账号的安全就是所有下游的安全：开启两步验证，不把写权限交给不受信任的自动化。`master` 已禁止强推和删除。
+
+## 修改规则定义
+
+五类业务规则、WebRTC 防护和 DNS 辅助资源的用途、动作、顺序、格式与路径集中在[规则目录](../scripts/rule_catalog.py)。生成器从这里读取定义。改完目录后运行 `python3 -B scripts/update_rule_catalog.py --write`，更新四份客户端入口、首页规则表、Schema 中对应的约束和单文件同步工具内嵌的下载清单。省略 `--write` 会检查这些文件是否一致。旧版 v1 的顺序另有兼容用例。
+
+两次构建对比时固定五个输入、来源版本和生成时间，核对整个输出目录，包含旧九文件和清单。[只读工具](INSPECT.md)可进一步解释哪份名单变了、一个样本会先命中哪组，以及各客户端验证到了哪一步。
+
+## 为同一版文本生成试用格式
+
+先运行 `scripts/build_rules.py` 得到 `generated/`。选择新的输出目录，使用与 CI 相同版本的 Mihomo 1.19.32、sing-box 1.14.4 执行以下命令。
+
+```sh
+python3 -B scripts/build_variants.py --source generated --output candidate --mihomo /path/to/mihomo --sing-box /path/to/sing-box
+python3 -B scripts/check_contracts.py --generated candidate --require-variants
+python3 -B scripts/check_public_suffixes.py --generated candidate
+python3 -B scripts/validate_native.py --generated candidate --mihomo /path/to/mihomo --sing-box /path/to/sing-box
+```
+
+完整候选有 16 条可选格式记录。三份旧域名文件得到复用，因此实际新增 13 个文件。检查会从当代文本重新编译参考文件，用原生工具解开参考与候选并比较内容。Mihomo 的 classical 防护继续从 YAML 验证。旧代、文本构建和完整候选都可用普通 `--generated` 检查；发布任务要求 `--require-variants`，缺少新格式会失败。[可选格式](FORMATS.md)
 
 ## 构建与原生验证
 
@@ -46,11 +65,19 @@ WebRTC 防护独立发布三种格式，不改变五类业务规则的十五个�
 python3 -B -m unittest discover -s scripts -p 'test_*.py'
 python3 -B scripts/check_contracts.py
 python3 -B scripts/build_rules.py
+python3 -B scripts/check_contracts.py --generated generated
+python3 -B scripts/check_public_suffixes.py --generated generated
 # 需要 PyYAML 6.0.3，以及自己核验过的官方可执行文件：
 python3 -B scripts/validate_native.py --mihomo /path/to/mihomo --sing-box /path/to/sing-box
+# Linux / macOS 需要 dig。测试只在本机回环地址监听。
+python3 -B scripts/check_sing_box_dns.py --sing-box /path/to/sing-box
 ```
 
-构建使用 Python 3.9+ 标准库，原生检查另外使用 PyYAML，同步工具需要 3.11+。无需项目密钥，勿使用 sudo。
+最后一项用合成 DNS 答案和两个本地接收端，检查 sing-box 1.14.4 对名单外域名和裸 IP 选择的出口。测试通过表示复现了[示例说明](../examples/README.md)中的行为，包括双栈混合域名可能有一路直连。
+
+文档检查使用固定版本的 lychee 离线核对本地链接、章节和图片。公共后缀检查读取仓库内固定版本的表，报告广告与内网名单是否会覆盖整个公共后缀。原生检查另外让 sing-box 对编译后的七份资源运行 18 个命中与不命中样本。[公共后缀结果判读](PUBLIC-SUFFIX.md)
+
+无参数的合约检查使用测试数据并核对公开文档。带 `--generated` 的检查读取指定目录里的真实文件，核对五类业务规则的顺序、动作、路径，以及索引、清单和文件摘要。复查早期 v1 发布时，可用 `--generated <目录> --historical` 识别当时尚未提供的可选资源。CI 对新发布执行当前契约。维护验证环境按 `requirements-dev.txt` 安装，包括日期时间和 URI 格式检查所需的依赖。构建使用 Python 3.9+ 标准库，原生检查另外使用 PyYAML，同步工具需要 3.11+。本地运行这些命令无需项目密钥或 sudo。
 
 数据来源为 Loyalsoldier 的 [v2ray-rules-dat](https://github.com/Loyalsoldier/v2ray-rules-dat)（direct / proxy / reject）、[domain-list-custom](https://github.com/Loyalsoldier/domain-list-custom)（private）与 [geoip](https://github.com/Loyalsoldier/geoip)（中国 IP）。固定 URL 和每次输入摘要写入 manifest；海外原文 `proxy-source.txt` 与国内冲突清洗来自同一批下载。保留本仓库 [GPL-3.0 LICENSE](../LICENSE) 和来源说明。
 

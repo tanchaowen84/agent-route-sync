@@ -9,7 +9,7 @@ import unittest
 
 import yaml
 
-import test_build_rules
+from rule_fixtures import source_inputs
 from build_rules import build
 from public_formats import BASE_URL, DATASETS, SYNTHETIC
 
@@ -230,41 +230,6 @@ def surge_outbounds(rules, answers=(), literal=None):
     return set()
 
 
-def sing_box_outbounds(config, answers=(), literal=None):
-    """sing-box 1.14.4: dns.rules for an A/AAAA lookup of an unlisted name, where IP sets under
-    match_response hold when any answer is inside (route/rule/rule_item_cidr.go). A FakeIP answer
-    returns the name to the router, where IP rules cannot match it; real answers can each be dialled."""
-    servers = {server['tag']: server for server in config['dns']['servers']}
-    holds = {'sr-cn-ip': in_china, 'sr-non-cn-ip': lambda address: not in_china(address)}
-    real, response = True, None
-    for rule in [] if literal else config['dns']['rules']:
-        if rule.get('match_response'):
-            if response is None or not any(holds[s](a) for s in rule['rule_set'] for a in response):
-                continue
-        elif set(rule) & DOMAIN_MATCHERS:
-            continue
-        if rule.get('action', 'route') == 'evaluate':
-            response = answers
-            continue
-        real = rule.get('action') == 'respond' or servers[rule['server']]['type'] != 'fakeip'
-        break
-    if not real:
-        return {config['route']['final']}
-    outcomes = set()
-    for address in [literal] if literal else answers:
-        for rule in config['route']['rules']:
-            if rule.get('action') not in ('route', 'reject') or set(rule) - {'ip_cidr', 'rule_set', 'action', 'outbound'}:
-                continue
-            if any(address in ipaddress.ip_network(n) for n in rule.get('ip_cidr', ())
-                   if ipaddress.ip_network(n).version == address.version) \
-                    or any(holds.get(s, lambda _: False)(address) for s in rule.get('rule_set', ())):
-                outcomes.add('REJECT' if rule['action'] == 'reject' else rule['outbound'])
-                break
-        else:
-            outcomes.add(config['route']['final'])
-    return outcomes
-
-
 class TemplateTests(unittest.TestCase):
     def assert_order(self, rules, marker):
         positions = [position(rules, marker(dataset)) for dataset in DATASETS]
@@ -275,7 +240,7 @@ class TemplateTests(unittest.TestCase):
 
     def test_first_match_changes_when_a_proxy_suffix_is_prepended(self):
         # Freeze the overlap in the fixture. Upstream membership may change independently.
-        raw = test_build_rules.SourceGenerationTests().fixture()
+        raw = source_inputs()
         raw['foreign_domains'] += 'domain:anthropic.com\n'
         raw['advertising_domains'] += 'domain:statsig.anthropic.com\n'
         with tempfile.TemporaryDirectory() as folder:
@@ -439,14 +404,11 @@ class TemplateTests(unittest.TestCase):
                 else:
                     self.assertEqual(resolver, expected)
 
-    def test_china_ip_fallback_never_sends_a_mixed_answer_direct(self):
-        # A core that tests one address cannot tell a mixed answer from a China one. DIRECT is
-        # allowed only when every answer is in China; an IP literal must still reach cn-ip.
+    def test_mihomo_and_surge_skip_mixed_answers_for_china_ip_fallback(self):
+        # Model the no-resolve rules here. The native DNS test covers sing-box.
         mihomo = yaml.safe_load((FULL / 'mihomo.yaml').read_text(encoding='utf-8'))
-        sing_box = json.loads((FULL / 'sing-box.json').read_text(encoding='utf-8'))
         evaluate = {'mihomo.yaml': lambda **kw: mihomo_outbounds(mihomo, **kw),
-                    'surge.conf': lambda **kw: surge_outbounds(rules_of('surge.conf'), **kw),
-                    'sing-box.json': lambda **kw: sing_box_outbounds(sing_box, **kw)}
+                    'surge.conf': lambda **kw: surge_outbounds(rules_of('surge.conf'), **kw)}
         for name, outbounds in evaluate.items():
             for label, answers in ANSWERS.items():
                 with self.subTest(name=name, answers=label):
@@ -456,9 +418,8 @@ class TemplateTests(unittest.TestCase):
             for literal, expected in ((CN_A, 'DIRECT'), (CN_AAAA, 'DIRECT'), (OTHER_A, 'PROXY'), (OTHER_AAAA, 'PROXY')):
                 with self.subTest(name=name, literal=str(literal)):
                     self.assertEqual(outbounds(literal=literal), {expected})
-        # sing-box judges the whole answer in DNS, so it keeps the fallback for China answers.
-        self.assertEqual(sing_box_outbounds(sing_box, answers=ANSWERS['China A + AAAA']), {'DIRECT'})
-        # Shadowrocket documents neither: the template must say so instead of claiming the goal.
+
+    def test_shadowrocket_template_marks_unverified_china_ip_fallback(self):
         self.assertIn('Unverified', comment_before('shadowrocket.conf', 'surge/cn-ip.list'))
 
     def test_mihomo_dns_policy_is_independent_of_business_outbound(self):

@@ -26,6 +26,7 @@
 - 模板只拒绝自己声明的 FakeIP 池和对应核心的默认 TUN 地址。现场设置了其他 TUN 地址时，按运行配置的实际前缀处理；sing-box 示例不含 TUN 入站，接口地址由现场配置决定，同样不能落进 LAN 直连。
 - sing-box 示例的 `route.default_domain_resolver` 承担节点服务器域名的引导解析，指向不经代理的解析器；节点出站自带 `domain_resolver` 时以它为准，也不能经过该节点所在的代理。内网名称以域名形式进入时，示例先按 DNS 规则 `resolve` 再直连，避免被 DIRECT 的解析器送到公网。
 - 另行获准保留业务例外时，保留用户例外的解析去向。Mihomo 示例清空 `direct-nameserver` 后，保留的域名直连规则会改由 `nameserver` 经代理解析；Surge 示例里 `[Host]` 之外的名称走经代理的 `encrypted-dns-server`；sing-box 示例的 `dns.rules` 只覆盖项目名单，TUN / FakeIP 路径上的用户域名例外按未知域名解析。按同一域名条件为这些例外补 DNS 策略，表达不了时说明限制并由使用者选择。Shadowrocket 的 `direct-dns-server` 本身按 DIRECT 域名规则生效。不要为此恢复按业务出站选择的直连解析器：IP 规则命中的未知域名会随之改走直连 DNS。
-- 中国 IP 兜底要看整组答案。Mihomo 和 Surge 的 IP 规则只测一个解析地址，模板因此给 cn-ip 加了 `no-resolve`：不在名单中的域名走默认代理，带真实地址到达的连接仍按 cn-ip 直连。代价是名单外的国内域名也经代理；去掉 `no-resolve` 能恢复域名兜底，但混合答案可能直连，须按[受限接入](../docs/CLIENTS.md#limited-integration)说明并由使用者选择。sing-box 示例在 DNS 阶段用 non-cn-ip 判断整组答案。Shadowrocket 测哪个地址、RULE-SET 能否带 `no-resolve` 都没查到资料，模板保持原样，须在目标设备核实。
+- 中国 IP 兜底要求名单外域名的所有地址都在 cn-ip 内才可直连。Mihomo 和 Surge 模板给 cn-ip 加了 `no-resolve`。此前规则未触发解析的名单外域名走默认代理，已经带真实地址的连接仍可按 cn-ip 直连。去掉这个选项会让混合答案有机会直连，须按[受限接入](../docs/CLIENTS.md#limited-integration)说明并由使用者选择。Shadowrocket 在混合答案中测哪个地址、RULE-SET 能否带 `no-resolve`，仍须在目标设备核实。
+- sing-box 1.14.4 对同一域名分别查 IPv4（A）和 IPv6（AAAA）。隔离运行中，同一次答复混有境内外地址，连接走代理；如果该域名的 A 全在境内、AAAA 全在境外，则 IPv4 直连、IPv6 走代理，反过来也是各走各的。启用双栈时，此模板无法保证混合域名的所有连接都走代理。[可重跑的检查](../scripts/check_sing_box_dns.py)
 - Shadowrocket 只有一项全局备用解析器，直连域名解析失败时也用它。模板让它经代理，避免海外和未知域名回退到直连；国内类的回退因此也经代理，不满足国内 DNS 全阶段直连目标，接入时按受限接入报告。不要清空它：社区手册说清空等于系统 DNS。
 - 使用实际版本的检查方式核验候选，再在授权目标中逐项验证。没有充分证据就说明限制，不将 CI 结果当作设备验收。

@@ -8,9 +8,9 @@ import os
 from pathlib import Path
 import re
 import time
-import urllib.error
 import urllib.request
-from public_formats import BASE_URL, LOCAL, export
+from public_formats import LOCAL, export
+from rule_catalog import DATASETS, LEGACY_FILES, REPOSITORY
 
 ROOT = Path(__file__).resolve().parents[1]
 REGISTRY = json.loads((ROOT / 'sources.json').read_text(encoding='utf-8'))
@@ -101,12 +101,17 @@ def matches(domain, exact, suffix):
     return domain in exact or any(parent in suffix for parent in parents(domain))
 
 
+# Early checks in the standard-library builder. CI separately checks the full pinned PSL.
+BROAD_DOMAIN_BASELINE = {'com.cn', 'net.cn', 'org.cn', 'co.uk', 'com.au', 'co.jp'}
+LOCAL_PRIVATE_LABELS = {'internal', 'localdomain', 'example', 'invalid', 'localhost', 'test', 'local', 'lan'}
+
+
 def advertising_domains(text):
     exact, suffix = domains(text)
     if not 1000 <= len(exact) + len(suffix) <= 500000:
         raise ValueError('advertising_dataset_empty_or_oversized')
     for name in exact | suffix:
-        if '.' not in name or name in {'com.cn', 'net.cn', 'org.cn', 'co.uk', 'com.au', 'co.jp'}:
+        if '.' not in name or name in BROAD_DOMAIN_BASELINE:
             raise ValueError('advertising_domain_too_broad')
         try:
             ipaddress.ip_address(name)
@@ -124,11 +129,10 @@ def advertising_domains(text):
 
 def private_domains(text):
     exact, suffix = domains(text)
-    local_tlds = {'internal', 'localdomain', 'example', 'invalid', 'localhost', 'test', 'local', 'lan'}
     if not 1 <= len(exact) + len(suffix) <= 10000:
         raise ValueError('private_dataset_empty_or_oversized')
     for name in exact | suffix:
-        if ('.' not in name and name not in local_tlds) or name in {'com.cn', 'net.cn', 'org.cn', 'co.uk', 'com.au', 'co.jp'}:
+        if ('.' not in name and name not in LOCAL_PRIVATE_LABELS) or name in BROAD_DOMAIN_BASELINE:
             raise ValueError('private_domain_too_broad')
     for host in MUST_STAY_REACHABLE:
         if matches(host, exact, suffix):
@@ -212,8 +216,7 @@ def build(raw, output, versions=None):
                    'private_domains': len(private_exact) + len(private_suffix)},
         'excluded_overseas_domain_entries': excluded_count,
         'files': {name: hashlib.sha256((output / name).read_bytes()).hexdigest()
-                  for name in ['direct.list', 'direct.json', 'direct.domains', 'direct.ipcidr',
-                               'reject.domains', 'reject.list', 'reject.json', 'private.domains', 'proxy-source.txt']},
+                  for name in LEGACY_FILES},
         'application_or_country_groups_generated': False,
         'public_formats_version': 1,
     }
@@ -245,14 +248,34 @@ def refuse_large_shrink(previous, current):
             raise ValueError('dataset_shrank_too_much:' + name)
 
 
-def published_index():
-    """The index clients read now, or None before the first publication."""
-    try:
-        return json.loads(fetch(BASE_URL + 'index.json'))
-    except urllib.error.HTTPError as error:
-        if error.code == 404:
-            return None
-        raise
+def release_baseline(repository):
+    """Resolve the target branch before selecting inputs. Only a successful ref listing can prove absence."""
+    ref = 'refs/heads/release'
+    refs = json.loads(fetch(f'https://api.github.com/repos/{repository}/git/matching-refs/heads/release'))
+    if not isinstance(refs, list):
+        raise ValueError('invalid_release_ref_listing')
+    matches = []
+    for entry in refs:
+        name = entry['ref']
+        obj = entry['object']
+        sha = obj['sha']
+        if not name.startswith(ref):
+            raise ValueError('invalid_release_ref_listing')
+        if obj['type'] != 'commit' or not re.fullmatch(r'[0-9a-f]{40}', sha) or sha == '0' * 40:
+            raise ValueError('invalid_release_sha')
+        if name == ref:
+            matches.append(sha)
+    if not matches:
+        return 'absent', None
+    if len(matches) != 1:
+        raise ValueError('duplicate_release_ref')
+    sha = matches[0]
+    index = json.loads(fetch(f'https://raw.githubusercontent.com/{repository}/{sha}/index.json'))
+    sizes = dataset_sizes(index)
+    if (set(sizes) != set(DATASETS) or len(index['datasets']) != len(sizes)
+            or any(type(count) is not int or count < 1 for count in sizes.values())):
+        raise ValueError('invalid_release_dataset_sizes')
+    return sha, index
 
 
 def stale_repositories(versions, now):
@@ -262,6 +285,8 @@ def stale_repositories(versions, now):
 
 
 def main(output=Path('generated')):
+    repository = os.environ.get('AGENTROUTE_RELEASE_REPOSITORY', REPOSITORY)
+    baseline, previous = release_baseline(repository)
     heads, raw, versions = {}, {}, {}
     for key, entry in REGISTRY['inputs'].items():
         repo, ref = entry['repository'], entry['ref']
@@ -274,13 +299,14 @@ def main(output=Path('generated')):
         raw[key] = fetch(url)
         versions[key] = {'repository': repo, 'commit': sha, 'committed_at': committed_at, 'path': entry['path'], 'url': url}
     manifest = build(raw, output, versions)
-    previous = published_index()
-    if previous and os.environ.get('AGENTROUTE_ALLOW_SHRINK') != 'true':
+    if previous is not None and os.environ.get('AGENTROUTE_ALLOW_SHRINK') != 'true':
         refuse_large_shrink(previous, json.loads((output / 'index.json').read_text(encoding='utf-8')))
     stale = stale_repositories(versions, datetime.datetime.now(datetime.timezone.utc))
-    if stale and os.environ.get('GITHUB_OUTPUT'):
+    if os.environ.get('GITHUB_OUTPUT'):
         with open(os.environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as stream:
-            stream.write('stale_upstreams=' + ','.join(stale) + '\n')
+            stream.write('release_baseline=' + baseline + '\n')
+            if stale:
+                stream.write('stale_upstreams=' + ','.join(stale) + '\n')
     print(json.dumps({**manifest['counts'], 'stale_upstreams': stale}))
 
 

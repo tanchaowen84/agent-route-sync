@@ -1,2 +1,6 @@
 PyYAML==6.0.3
 jsonschema==4.25.1
+rfc3339-validator==0.1.4
+rfc3986-validator==0.1.1
+lychee-bin==0.24.2
+tldextract==5.4.0

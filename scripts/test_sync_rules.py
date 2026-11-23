@@ -16,11 +16,12 @@ class SyncTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory(); self.root = Path(self.temp.name)/'cache'
         self.sha = 'a'*40; self.bad = None; self.age = 0
+        self.published = {}
     def tearDown(self): self.temp.cleanup()
     def fetch(self, url):
         if self.bad == 'offline': raise OSError('offline')
         if url.endswith('/commits/release'): return json.dumps({'sha':self.sha}).encode()
-        date=(datetime.now(timezone.utc)-timedelta(hours=self.age)).isoformat()
+        date=self.published.get(self.sha, datetime.now(timezone.utc)-timedelta(hours=self.age)).isoformat()
         # Stable within a download transaction.
         if url.endswith('/manifest.json'):
             self.data={n:b'payload' for n in selected('all')}
@@ -62,6 +63,67 @@ class SyncTests(unittest.TestCase):
         operate('rollback',self.root)
         self.assertEqual(operate('rollback',self.root)['generation'],'b'*40+'-all')
         self.assertEqual(self.sync()['status'],'unchanged')
+        self.assertNotIn('held', json.loads((self.root / 'current.json').read_bytes()))
+        result = operate('sync', self.root, 'mihomo', fetch=self.fetch)
+        self.assertEqual(result['generation'], self.sha + '-mihomo')
+        self.assertEqual(operate('status', self.root)['previous'], self.sha + '-all')
+        self.assertEqual({path.name for path in (self.root / 'generations').iterdir()},
+                         {self.sha + '-all', self.sha + '-mihomo'})
+
+    def test_legacy_hold_compares_release_sha_and_strict_publication_time(self):
+        middle = datetime.now(timezone.utc) - timedelta(hours=4)
+        earlier, held_sha, same_time, newer = (letter * 40 for letter in 'bcde')
+        self.published = {
+            self.sha: middle - timedelta(hours=1),
+            earlier: middle - timedelta(minutes=1),
+            held_sha: middle,
+            same_time: middle.astimezone(timezone(timedelta(hours=8))),
+            newer: middle + timedelta(microseconds=1),
+        }
+        current = self.sync()['generation']
+        self.sha = held_sha
+        held = operate('sync', self.root, 'surge', fetch=self.fetch)['generation']
+        operate('rollback', self.root)
+        # Existing users have the old pointer and inventories without ownership fields.
+        pointer = self.root / 'current.json'
+        before = json.dumps({'current': current, 'previous': held, 'held': held}).encode()
+        pointer.write_bytes(before)
+        base = self.root / 'generations'
+        for path in base.glob('*/cache.json'):
+            meta = json.loads(path.read_bytes())
+            del meta['generation'], meta['stage']
+            path.write_text(json.dumps(meta))
+        for sha, fmt, pinned in ((held_sha, 'all', False), (held_sha, 'sing-box', True),
+                                 (earlier, 'mihomo', True), (same_time, 'surge', False)):
+            with self.subTest(sha=sha, fmt=fmt):
+                self.sha = sha
+                result = operate('sync', self.root, fmt, fetch=self.fetch, release_sha=sha if pinned else None)
+                self.assertEqual((result['status'], result['generation'], result['held_generation']),
+                                 ('held', current, held))
+                self.assertEqual(pointer.read_bytes(), before)
+                self.assertEqual({path.name for path in base.iterdir()}, {current, held})
+        self.sha = newer
+        with patch('sync_rules.atomic', side_effect=OSError('pointer unavailable')), self.assertRaises(OSError):
+            operate('sync', self.root, 'sing-box', fetch=self.fetch)
+        self.assertEqual(pointer.read_bytes(), before)
+        self.assertEqual({path.name for path in base.iterdir()}, {current, held})
+        result = operate('sync', self.root, 'sing-box', fetch=self.fetch)
+        self.assertEqual((result['status'], result['generation']), ('updated', newer + '-sing-box'))
+        self.assertEqual(json.loads(pointer.read_bytes()), {'current': result['generation'], 'previous': current})
+        self.assertEqual({path.name for path in base.iterdir()}, {current, result['generation']})
+
+    def test_missing_held_manifest_preserves_hold_for_another_release(self):
+        self.sync()
+        self.sha = 'b' * 40
+        held = self.sync()
+        operate('rollback', self.root)
+        (Path(held['directory']) / 'manifest.json').unlink()
+        pointer = self.root / 'current.json'
+        before = pointer.read_bytes()
+        self.sha = 'c' * 40
+        with self.assertRaises(FileNotFoundError):
+            self.sync()
+        self.assertEqual(pointer.read_bytes(), before)
     def test_pointer_written_before_holds_existed_still_works(self):
         self.sync();pointer=self.root/'current.json'
         self.assertNotIn('held',json.loads(pointer.read_text()))
@@ -122,6 +184,111 @@ class SyncTests(unittest.TestCase):
         with patch('sync_rules.atomic',side_effect=OSError('write denied')):
             with self.assertRaises(OSError): self.sync()
         self.assertEqual((self.root/'current.json').read_bytes(),before)
+        self.assertEqual([path.name for path in (self.root / 'generations').iterdir()], ['a' * 40 + '-all'])
+
+    def test_ownership_record_write_error_removes_our_partial_stage(self):
+        current = self.sync()['generation']
+        pointer = self.root / 'current.json'
+        before = pointer.read_bytes()
+        self.sha = 'c' * 40
+        def partial_write(_meta, record):
+            record.write('{')
+            raise OSError('cache full')
+        with patch('sync_rules.json.dump', side_effect=partial_write), self.assertRaisesRegex(OSError, 'cache full'):
+            self.sync()
+        self.assertEqual(pointer.read_bytes(), before)
+        self.assertEqual({path.name for path in (self.root / 'generations').iterdir()}, {current})
+
+    def test_crash_at_pointer_switch_recovers_under_lock(self):
+        first = self.sync()['generation']
+        self.sha = 'b' * 40
+        current = self.sync()['generation']
+        pointer = self.root / 'current.json'
+        before = pointer.read_bytes()
+        # Abrupt exit bypasses all finally blocks. Use the same sync entry and local fixture.
+        script = """
+from pathlib import Path
+from unittest.mock import patch
+import os, sys
+from sync_rules import atomic, operate
+from test_sync_rules import SyncTests
+fixture = SyncTests()
+fixture.sha, fixture.bad, fixture.age, fixture.published = 'c' * 40, None, 0, {}
+def stop(path, value):
+    if sys.argv[2] == 'after':
+        atomic(path, value)
+    os._exit(92)
+with patch('sync_rules.atomic', side_effect=stop):
+    operate('sync', Path(sys.argv[1]), fetch=fixture.fetch)
+"""
+        args = [sys.executable, '-B', '-c', script, str(self.root)]
+        p = subprocess.run(args + ['before'], cwd=Path(__file__).parent)
+        self.assertEqual(p.returncode, 92)
+        self.assertEqual(pointer.read_bytes(), before)
+        base = self.root / 'generations'
+        orphan = 'c' * 40 + '-all'
+        self.assertEqual({path.name for path in base.iterdir()}, {first, current, orphan})
+        with locked(self.root):
+            with self.assertRaisesRegex(ValueError, 'cache_busy'):
+                self.sync()
+            self.assertTrue((base / orphan).is_dir())
+        self.assertEqual(self.sync()['status'], 'unchanged')
+        self.assertEqual({path.name for path in base.iterdir()}, {first, current})
+        self.sha = 'd' * 40
+        updated = self.sync()['generation']
+        self.assertEqual({path.name for path in base.iterdir()}, {current, updated})
+        # A crash just after committing leaves the old previous directory to collect instead.
+        p = subprocess.run(args + ['after'], cwd=Path(__file__).parent)
+        self.assertEqual(p.returncode, 92)
+        self.assertEqual(json.loads(pointer.read_bytes()), {'current': orphan, 'previous': updated})
+        self.assertEqual({path.name for path in base.iterdir()}, {current, updated, orphan})
+        self.sha = 'c' * 40
+        self.assertEqual(self.sync()['status'], 'unchanged')
+        self.assertEqual({path.name for path in base.iterdir()}, {updated, orphan})
+
+    def test_cleanup_preserves_user_data_and_unmarked_orphans(self):
+        result = self.sync()
+        original = Path(result['directory'])
+        base = original.parent
+        meta = json.loads((original / 'cache.json').read_bytes())
+        outside = self.root / 'outside'
+        outside.mkdir()
+        (outside / 'user.txt').write_text('keep')
+        # An unrelated full-SHA directory and an unmarked partial stage belong to the user.
+        for name in ('0' * 40 + '-all', '.stage-' + '0' * 16):
+            path = base / name
+            path.mkdir()
+            (path / 'cache.json').write_text(json.dumps({'schema_version': 2, 'files': meta['files']}))
+        # Recover our partial stage, leaving stages with foreign entries intact.
+        protected = []
+        for i, entry in enumerate(('plain', 'file', 'folder', 'link'), start=1):
+            stage = base / ('.stage-' + str(i) * 16)
+            stage.mkdir()
+            (stage / 'cache.json').write_text(json.dumps({**meta, 'stage': stage.name}))
+            (stage / 'manifest.json').write_bytes(b'partial')
+            (stage / 'surge').mkdir()
+            if entry == 'file':
+                (stage / 'surge' / 'my-notes.txt').write_text('keep')
+            elif entry == 'folder':
+                (stage / 'my-project').mkdir()
+            elif entry == 'link':
+                try:
+                    (stage / 'mihomo').symlink_to(outside, target_is_directory=True)
+                except OSError:  # Windows may prohibit unprivileged symbolic links.
+                    (stage / 'my-project').mkdir()
+            if entry != 'plain':
+                protected.append(stage)
+        (original / 'user.txt').write_text('preserve the whole old generation')
+        for sha in ('b' * 40, 'd' * 40):
+            self.sha = sha
+            self.sync()
+        self.assertTrue((original / 'user.txt').is_file())
+        self.assertTrue((original / 'index.json').is_file())
+        self.assertTrue((outside / 'user.txt').is_file())
+        self.assertFalse((base / ('.stage-' + '1' * 16)).exists())
+        self.assertTrue(all((p / 'manifest.json').is_file() for p in protected))
+        self.assertTrue((base / ('0' * 40 + '-all') / 'cache.json').is_file())
+        self.assertTrue((base / ('.stage-' + '0' * 16) / 'cache.json').is_file())
     def test_future_publication_rejected(self):
         self.age=-1
         with self.assertRaises(ValueError):self.sync()
@@ -273,6 +440,51 @@ class SyncTests(unittest.TestCase):
         with patch('sync_rules.operate', side_effect=offline), patch.object(sys, 'argv', args), patch('builtins.print', out):
             self.assertEqual(main(), 0)
         self.assertEqual(json.loads(out.call_args[0][0])['generation'], self.sha + '-mihomo')
+
+    def test_optional_formats_are_complete_and_default_stays_text(self):
+        from sync_rules import VARIANT_FILES
+        file_names = {path for fmt in VARIANT_FILES for path in selected(fmt)} | set(selected('all'))
+        file_names.update(('sing-box/webrtc-guard.json', 'sing-box/non-cn-ip.json'))
+        files = {path: b'\x00\xff\r\n' for path in file_names}
+        date = datetime.now(timezone.utc).isoformat()
+        rows = [{'id': name, 'format': fmt, 'path': path, 'sha256': hashlib.sha256(files[path]).hexdigest()}
+                for fmt, by_name in VARIANT_FILES.items() for name, path in by_name.items()]
+
+        def fetch(url):
+            name = url.split('/' + self.sha + '/')[1]
+            if name == 'manifest.json':
+                files['index.json'] = json.dumps({'schema_version': 1, 'generated_at_utc': date,
+                                                  'format_variants': rows}).encode()
+                return json.dumps({'scope': 'domestic_direct_and_adblock', 'generated_at_utc': date,
+                                   'files': {n: hashlib.sha256(v).hexdigest() for n, v in files.items()}}).encode()
+            return files[name]
+
+        for fmt, count in (('all', 20), ('mrs', 7), ('srs', 8), ('domain-set', 10)):
+            result = operate('sync', self.root, fmt, fetch, self.sha)
+            self.assertEqual(len(result['files']), count)
+            self.assertEqual(operate('verify', self.root)['files'], result['files'])
+            if fmt == 'all':
+                self.assertFalse(any(path.endswith(('.srs', '.mrs', '.domains')) for path in result['files']))
+            if fmt == 'mrs':
+                self.assertIn('mihomo/webrtc-guard.yaml', result['files'])
+            if fmt == 'domain-set':
+                self.assertIn('surge/cn-ip.list', result['files'])
+                self.assertIn('private.domains', result['files'])
+                self.assertIn('surge/private.list', result['files'])
+
+        before = (self.root / 'current.json').read_bytes()
+        rows[0]['sha256'] = '0' * 64
+        with self.assertRaisesRegex(ValueError, 'format_index_digest_mismatch'):
+            operate('sync', self.root, 'mrs', fetch, self.sha)
+        self.assertEqual((self.root / 'current.json').read_bytes(), before)
+
+    def test_choosing_a_format_on_a_pre_pilot_generation_preserves_cache(self):
+        self.sync()
+        before = (self.root / 'current.json').read_bytes()
+        for fmt in ('mrs', 'srs', 'domain-set'):
+            with self.assertRaisesRegex(ValueError, 'format_files_unavailable:' + fmt):
+                operate('sync', self.root, fmt, fetch=self.fetch)
+        self.assertEqual((self.root / 'current.json').read_bytes(), before)
 
     def test_default_api_rate_limit_preserves_existing_or_empty_cache(self):
         def limited(url):

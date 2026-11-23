@@ -70,6 +70,8 @@
 
 五类业务规则按 **01 → 05** 匹配，首条命中即采用对应动作。未匹配的流量默认走代理；`PROXY` 由 Agent 映射到你的可用代理策略组。
 
+<!-- rule-catalog:business -->
+
 | 顺序 | 业务规则 | 动作 | Mihomo | Surge / 小火箭 | sing-box |
 | --- | --- | --- | --- | --- | --- |
 | **01** | 内网直连 `private` | `DIRECT` | [YAML](https://raw.githubusercontent.com/ryuu-restart/agent-route/release/mihomo/private.yaml) | [LIST](https://raw.githubusercontent.com/ryuu-restart/agent-route/release/surge/private.list) | [JSON](https://raw.githubusercontent.com/ryuu-restart/agent-route/release/sing-box/private.json) |
@@ -78,13 +80,19 @@
 | **04** | 国内直连 `direct` | `DIRECT` | [YAML](https://raw.githubusercontent.com/ryuu-restart/agent-route/release/mihomo/direct.yaml) | [LIST](https://raw.githubusercontent.com/ryuu-restart/agent-route/release/surge/direct.list) | [JSON](https://raw.githubusercontent.com/ryuu-restart/agent-route/release/sing-box/direct.json) |
 | **05** | 中国 IP 兜底 `cn-ip` | `DIRECT` | [YAML](https://raw.githubusercontent.com/ryuu-restart/agent-route/release/mihomo/cn-ip.yaml) | [LIST](https://raw.githubusercontent.com/ryuu-restart/agent-route/release/surge/cn-ip.list) | [JSON](https://raw.githubusercontent.com/ryuu-restart/agent-route/release/sing-box/cn-ip.json) |
 
+<!-- /rule-catalog:business -->
+
 **独立 WebRTC 防护**：放在必要技术规则之后、普通公网 DNS 地址例外和上述业务规则之前。
+
+<!-- rule-catalog:protection -->
 
 | 防护 | 动作 | Mihomo | Surge / 小火箭 | sing-box |
 | --- | --- | --- | --- | --- |
 | WebRTC 探测拦截 | `REJECT` | [YAML¹](https://raw.githubusercontent.com/ryuu-restart/agent-route/release/mihomo/webrtc-guard.yaml) | [LIST](https://raw.githubusercontent.com/ryuu-restart/agent-route/release/surge/webrtc-guard.list) | [JSON](https://raw.githubusercontent.com/ryuu-restart/agent-route/release/sing-box/webrtc-guard.json) |
 
-¹ Mihomo 使用 `classical` 格式。防护拒绝已被客户端接管的常见探测，可能影响通话、会议及 P2P。[接入顺序与覆盖范围](docs/WEBRTC-GUARD.md)
+<!-- /rule-catalog:protection -->
+
+¹ Mihomo 使用 `classical` 格式。小火箭与 Surge 共用同一个 LIST 地址，小火箭的远程加载和实际拦截仍待真机验证。防护拒绝已被客户端接管的常见探测，可能影响通话、会议及 P2P。[接入顺序与覆盖范围](docs/WEBRTC-GUARD.md)
 
 <a id="记得经常更新"></a>
 
@@ -96,6 +104,10 @@
 **Agent 格式入口：** [Clash / Mihomo](https://raw.githubusercontent.com/ryuu-restart/agent-route/master/subscriptions/mihomo.json) · [Surge](https://raw.githubusercontent.com/ryuu-restart/agent-route/master/subscriptions/surge.json) · [Shadowrocket](https://raw.githubusercontent.com/ryuu-restart/agent-route/master/subscriptions/shadowrocket.json) · [sing-box](https://raw.githubusercontent.com/ryuu-restart/agent-route/master/subscriptions/sing-box.json) · [完整索引](https://raw.githubusercontent.com/ryuu-restart/agent-route/release/index.json)
 
 [手动接入参考](docs/CLIENTS.md) · [可选模板与历史验证](examples/README.md)
+
+想知道两版名单增删了什么，或一个域名会先命中哪条规则，可以查看[本地查询示例](docs/INSPECT.md)。
+
+在完整索引的 `format_variants` 中可以查找当版提供的 MRS、SRS 和 Surge 纯域名列表。[可选格式与使用方法](docs/FORMATS.md)
 
 </details>
 

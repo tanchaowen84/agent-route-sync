@@ -7,14 +7,14 @@ import unittest
 
 from build_rules import build
 from public_formats import DATASETS, outside_networks, public_china_networks
-import test_build_rules
+from rule_fixtures import source_inputs
 
 
 class PublicFormatTests(unittest.TestCase):
     def test_exact_suffix_order_and_native_payloads(self):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)
-            manifest = build(test_build_rules.SourceGenerationTests().fixture(), root)
+            manifest = build(source_inputs(), root)
             index = json.loads((root / 'index.json').read_text())
             self.assertEqual(index['order'][4:-1], list(DATASETS))
             self.assertEqual(index['generated_at_utc'], manifest['generated_at_utc'])
@@ -45,7 +45,7 @@ class PublicFormatTests(unittest.TestCase):
     def test_helper_is_published_and_indexed_outside_the_datasets(self):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)
-            manifest = build(test_build_rules.SourceGenerationTests().fixture(), root)
+            manifest = build(source_inputs(), root)
             index = json.loads((root / 'index.json').read_text())
             self.assertEqual(index['helpers'][0]['sha256'], manifest['files']['sing-box/non-cn-ip.json'])
             self.assertEqual(len(index['datasets']), len(DATASETS))
@@ -53,7 +53,7 @@ class PublicFormatTests(unittest.TestCase):
 
     def test_no_empty_sing_box_conditions(self):
         with tempfile.TemporaryDirectory() as folder:
-            build(test_build_rules.SourceGenerationTests().fixture(), Path(folder))
+            build(source_inputs(), Path(folder))
             for path in (Path(folder) / 'sing-box').glob('*.json'):
                 for rule in json.loads(path.read_text())['rules']:
                     self.assertTrue(rule)

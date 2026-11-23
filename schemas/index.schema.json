@@ -2,36 +2,28 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "index v1",
   "type": "object",
-  "required": [
-    "schema_version",
-    "scope",
-    "generated_at_utc",
-    "datasets",
-    "order"
-  ],
+  "required": ["schema_version", "scope", "generated_at_utc", "datasets", "order"],
   "properties": {
-    "schema_version": {
-      "const": 1
-    },
-    "generated_at_utc": {
-      "type": "string",
-      "format": "date-time"
-    },
-    "scope": {
-      "const": "public_routing_data_only"
-    },
-    "files": {
+    "schema_version": {"const": 1},
+    "scope": {"const": "public_routing_data_only"},
+    "generated_at_utc": {"type": "string", "format": "date-time"},
+    "files": {"type": "object", "additionalProperties": {"$ref": "#/$defs/digest"}},
+    "source_versions": {"type": "object"},
+    "sources": {"type": "object"},
+    "base_url": {"$ref": "#/$defs/uri"},
+    "manifest_url": {"$ref": "#/$defs/uri"},
+    "agent_guide_url": {"$ref": "#/$defs/uri"},
+    "privacy_guide_url": {"$ref": "#/$defs/uri"},
+    "schemas": {
       "type": "object",
-      "additionalProperties": {
-        "type": "string",
-        "pattern": "^[a-f0-9]{64}$"
-      }
+      "properties": {"index": {"$ref": "#/$defs/uri"}, "manifest": {"$ref": "#/$defs/uri"}}
     },
-    "source_versions": {
-      "type": "object"
-    },
-    "sources": {
-      "type": "object"
+    "order": {
+      "enum": [
+        ["user-and-node-exceptions", "lan", "private", "reject", "proxy", "direct", "cn-ip", "final-proxy"],
+        ["user-and-node-exceptions", "lan", "dns-server-paths", "private", "reject", "proxy", "direct", "cn-ip", "final-proxy"],
+        ["user-and-node-exceptions", "lan", "webrtc-guard", "dns-server-paths", "private", "reject", "proxy", "direct", "cn-ip", "final-proxy"]
+      ]
     },
     "datasets": {
       "type": "array",
@@ -39,90 +31,39 @@
       "maxItems": 5,
       "items": {
         "type": "object",
-        "required": [
-          "id",
-          "action",
-          "mihomo_behavior",
-          "resources"
-        ],
-        "properties": {
-          "id": {
-            "enum": [
-              "private",
-              "reject",
-              "proxy",
-              "direct",
-              "cn-ip"
-            ]
-          },
-          "action": {
-            "enum": [
-              "DIRECT",
-              "PROXY",
-              "REJECT"
-            ]
-          },
-          "mihomo_behavior": {
-            "enum": [
-              "domain",
-              "ipcidr"
-            ]
-          },
-          "resources": {
-            "type": "object",
-            "required": [
-              "mihomo",
-              "surge",
-              "sing-box"
-            ],
-            "additionalProperties": {
-              "type": "object",
-              "required": [
-                "path",
-                "url",
-                "sha256",
-                "entries"
-              ],
-              "properties": {
-                "path": {
-                  "type": "string",
-                  "pattern": "^(mihomo|surge|sing-box)/[a-z-]+\\.(yaml|list|json)$"
-                },
-                "url": {
-                  "type": "string",
-                  "format": "uri"
-                },
-                "sha256": {
-                  "type": "string",
-                  "pattern": "^[a-f0-9]{64}$"
-                },
-                "entries": {
-                  "type": "integer",
-                  "minimum": 1
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "order": {
-      "type": "array",
-      "items": {
-        "type": "string"
-      }
+        "required": ["id", "action", "mihomo_behavior", "resources"],
+        "properties": {"resources": {"$ref": "#/$defs/resources"}}
+      },
+      "allOf": [{
+        "prefixItems": [
+          {"properties": {"id": {"const": "private"}, "action": {"const": "DIRECT"}, "mihomo_behavior": {"const": "domain"}}},
+          {"properties": {"id": {"const": "reject"}, "action": {"const": "REJECT"}, "mihomo_behavior": {"const": "domain"}}},
+          {"properties": {"id": {"const": "proxy"}, "action": {"const": "PROXY"}, "mihomo_behavior": {"const": "domain"}}},
+          {"properties": {"id": {"const": "direct"}, "action": {"const": "DIRECT"}, "mihomo_behavior": {"const": "domain"}}},
+          {"properties": {"id": {"const": "cn-ip"}, "action": {"const": "DIRECT"}, "mihomo_behavior": {"const": "ipcidr"}}}
+        ]
+      }]
     },
     "helpers": {
       "type": "array",
       "items": {
-        "type": "object",
-        "required": [
-          "id",
-          "path",
-          "url",
-          "sha256",
-          "entries"
-        ]
+        "allOf": [{"$ref": "#/$defs/resource"}],
+        "required": ["id"],
+        "properties": {"id": {"type": "string", "minLength": 1}}
+      }
+    },
+    "format_variants": {
+      "type": "array",
+      "minItems": 16,
+      "maxItems": 16,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/resource",
+        "required": ["id", "format"],
+        "properties": {
+          "id": {"type": "string", "minLength": 1},
+          "format": {"enum": ["mrs", "srs", "domain-set"]}
+        }
       }
     },
     "protections": {
@@ -130,99 +71,43 @@
       "maxItems": 1,
       "items": {
         "type": "object",
-        "required": [
-          "id",
-          "action",
-          "mihomo_behavior",
-          "scope",
-          "ports",
-          "domain_keywords",
-          "requires",
-          "limitations",
-          "resources"
-        ],
+        "required": ["id", "action", "mihomo_behavior", "scope", "ports", "domain_keywords", "requires", "limitations", "resources"],
         "properties": {
-          "id": {
-            "const": "webrtc-guard"
-          },
-          "action": {
-            "const": "REJECT"
-          },
-          "mihomo_behavior": {
-            "const": "classical"
-          },
-          "scope": {
-            "const": "common_stun_ports_and_domain_keywords"
-          },
-          "ports": {
-            "type": "array",
-            "minItems": 1,
-            "uniqueItems": true,
-            "items": {
-              "type": "integer",
-              "minimum": 1,
-              "maximum": 65535
-            }
-          },
-          "domain_keywords": {
-            "type": "array",
-            "minItems": 1,
-            "uniqueItems": true,
-            "items": {
-              "type": "string",
-              "minLength": 1
-            }
-          },
-          "requires": {
-            "type": "array",
-            "minItems": 1,
-            "items": {
-              "type": "string"
-            }
-          },
-          "limitations": {
-            "type": "array",
-            "minItems": 1,
-            "items": {
-              "type": "string"
-            }
-          },
-          "resources": {
-            "type": "object",
-            "required": [
-              "mihomo",
-              "surge",
-              "sing-box"
-            ],
-            "additionalProperties": {
-              "type": "object",
-              "required": [
-                "path",
-                "url",
-                "sha256",
-                "entries"
-              ],
-              "properties": {
-                "path": {
-                  "type": "string",
-                  "pattern": "^(mihomo|surge|sing-box)/[a-z-]+\\.(yaml|list|json)$"
-                },
-                "url": {
-                  "type": "string",
-                  "format": "uri"
-                },
-                "sha256": {
-                  "type": "string",
-                  "pattern": "^[a-f0-9]{64}$"
-                },
-                "entries": {
-                  "type": "integer",
-                  "minimum": 1
-                }
-              }
-            }
-          }
+          "id": {"const": "webrtc-guard"},
+          "action": {"const": "REJECT"},
+          "mihomo_behavior": {"const": "classical"},
+          "scope": {"const": "common_stun_ports_and_domain_keywords"},
+          "ports": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "integer", "minimum": 1, "maximum": 65535}},
+          "domain_keywords": {"$ref": "#/$defs/strings", "uniqueItems": true},
+          "requires": {"$ref": "#/$defs/strings"},
+          "limitations": {"$ref": "#/$defs/strings"},
+          "resources": {"$ref": "#/$defs/resources"}
         }
+      }
+    }
+  },
+  "$defs": {
+    "uri": {"type": "string", "format": "uri"},
+    "digest": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "strings": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
+    "resources": {
+      "type": "object",
+      "required": ["mihomo", "surge", "sing-box"],
+      "properties": {
+        "mihomo": {"$ref": "#/$defs/resource", "properties": {"path": {"pattern": "^mihomo/[a-z-]+\\.yaml$"}}},
+        "surge": {"$ref": "#/$defs/resource", "properties": {"path": {"pattern": "^surge/[a-z-]+\\.list$"}}},
+        "sing-box": {"$ref": "#/$defs/resource", "properties": {"path": {"pattern": "^sing-box/[a-z-]+\\.json$"}}}
+      },
+      "additionalProperties": {"$ref": "#/$defs/resource"}
+    },
+    "resource": {
+      "type": "object",
+      "required": ["path", "url", "sha256", "entries"],
+      "properties": {
+        "path": {"type": "string", "pattern": "^[A-Za-z0-9_-][A-Za-z0-9_.-]*(/[A-Za-z0-9_-][A-Za-z0-9_.-]*)*$"},
+        "url": {"$ref": "#/$defs/uri"},
+        "sha256": {"$ref": "#/$defs/digest"},
+        "entries": {"type": "integer", "minimum": 1}
       }
     }
   }
